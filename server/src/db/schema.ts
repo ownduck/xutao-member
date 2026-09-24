@@ -263,6 +263,14 @@ export const goodsOrderItem = pgTable('goods_order_item', {
   updateTime: timestamp('update_time').notNull().defaultNow(),
 });
 
+/** Distributed cron mutex (Vercel/serverless-safe) */
+export const cronJobLock = pgTable('cron_job_lock', {
+  jobKey: text('job_key').primaryKey(),
+  owner: text('owner').notNull(),
+  lockedAt: timestamp('locked_at').notNull(),
+  lockedUntil: timestamp('locked_until').notNull(),
+});
+
 export const schema = {
   user,
   session,
@@ -281,4 +289,5 @@ export const schema = {
   financeDeduction,
   goodsOrder,
   goodsOrderItem,
+  cronJobLock,
 };

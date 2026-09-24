@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { auth } from './auth/auth.js';
 import { AppController } from './app.controller.js';
+import { CronModule } from './cron/cron.module.js';
 import { FinanceModule } from './finance/finance.module.js';
 import { GoodsModule } from './goods/goods.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
@@ -39,6 +40,7 @@ const staticModules =
     SiteModule,
     FinanceModule,
     GoodsModule,
+    CronModule,
     ...staticModules,
   ],
   controllers: [AppController],
