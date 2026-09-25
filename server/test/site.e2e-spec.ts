@@ -53,7 +53,37 @@ describe('site', () => {
     const sync = await api('/api/site/exchange-rates/sync', admin, {
       method: 'POST',
     });
-    expectStatus(sync, [200, 201, 503], 'rates sync');
+    expectStatus(sync, [200, 201], 'rates sync stub');
+  });
+
+  it('C3: illegal currency / negative rate → 400', async () => {
+    const badCurrency = await api('/api/site/settings', admin, {
+      method: 'PUT',
+      body: JSON.stringify({
+        defaultCountryCode: 'US',
+        defaultCurrencyCode: 'XXX',
+      }),
+    });
+    expectStatus(badCurrency, 400);
+
+    const rates = await api('/api/site/exchange-rates', admin);
+    const cfg = rates.data as {
+      baseCurrencyCode: string;
+      rates: Array<{ currencyCode: string; rateToBase: number }>;
+    };
+    const badRate = await api('/api/site/exchange-rates', admin, {
+      method: 'PUT',
+      body: JSON.stringify({
+        baseCurrencyCode: cfg.baseCurrencyCode || 'USD',
+        rates: [
+          ...(cfg.rates || []).slice(0, 1).map((r) => ({
+            currencyCode: r.currencyCode,
+            rateToBase: -1,
+          })),
+        ],
+      }),
+    });
+    expectStatus(badRate, 400);
   });
 
   it('dealer cannot update settings', async () => {

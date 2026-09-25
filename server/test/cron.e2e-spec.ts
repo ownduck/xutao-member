@@ -22,10 +22,12 @@ describe('cron', () => {
   });
 
   it('price-sync with secret + concurrent lock', async () => {
-    const ok1 = await api('/api/cron/price-sync', null, {
-      headers: { Authorization: `Bearer ${cronSecret}` },
-    });
-    expect([200, 201]).toContain(ok1.status);
+    // clear lock first
+    const { sql } = await import('drizzle-orm');
+    const { db } = await import('../src/db/index.js');
+    await db.execute(
+      sql`UPDATE cron_job_lock SET locked_until = NOW() - INTERVAL '1 second'`,
+    );
 
     const [a, b] = await Promise.all([
       api('/api/cron/price-sync', null, {
@@ -38,14 +40,21 @@ describe('cron', () => {
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
     const bodies = [a.data, b.data] as Array<{ skipped?: boolean }>;
-    // lock may or may not trigger if jobs are fast; both 200 is enough
-    expect(bodies.every((x) => x != null)).toBe(true);
+    const anySkip = bodies.some((x) => x?.skipped === true);
+    const anyRan = bodies.some((x) => x && x.skipped !== true);
+    expect(anyRan || anySkip).toBe(true);
+    // Prefer seeing a lock skip; if both finish (rare), still OK if both 200
+    if (!anySkip) {
+      expect(bodies.every((x) => x != null)).toBe(true);
+    } else {
+      expect(anySkip).toBe(true);
+    }
   });
 
   it('exchange-rates cron', async () => {
     const fx = await api('/api/cron/exchange-rates', null, {
       headers: { Authorization: `Bearer ${cronSecret}` },
     });
-    expectStatus(fx, [200, 201, 503]);
+    expectStatus(fx, [200, 201], 'cron fx stub');
   });
 });

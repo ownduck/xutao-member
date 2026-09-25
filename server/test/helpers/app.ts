@@ -8,8 +8,7 @@ if (!process.env.CRON_SECRET?.trim()) {
   process.env.CRON_SECRET = 'e2e-cron-secret-local';
 }
 
-/** Vitest e2e: no live Bright Data (assert 503); disable @Cron so schedulers don't fire. */
-process.env.BRIGHTDATA_API_TOKEN = '';
+/** Vitest e2e: disable @Cron so schedulers don't fire mid-suite. */
 process.env.VERCEL = '1';
 
 export type E2eApp = {
@@ -18,6 +17,10 @@ export type E2eApp = {
   origin: string;
   cronSecret: string;
   close: () => Promise<void>;
+  /** Restore real AmazonPriceService.fetchUsdPrice (for live Bright Data specs). */
+  enableLiveBrightData: () => void;
+  /** Re-apply stub that fails fast without network. */
+  disableLiveBrightData: () => void;
 };
 
 let boot: Promise<E2eApp> | null = null;
@@ -48,66 +51,57 @@ export function ensureE2eApp(): Promise<E2eApp> {
         bodyParser: false,
         logger: ['error', 'warn'],
       });
-      // ConfigModule reloads .env — stub externals for fast, deterministic e2e
-      process.env.BRIGHTDATA_API_TOKEN = '';
       process.env.VERCEL = '1';
-      {
-        const { ServiceUnavailableException } = await import('@nestjs/common');
-        const { AmazonPriceService } = await import(
-          '../../src/goods/amazon-price.service.js'
-        );
-        const { GoodsService } = await import(
-          '../../src/goods/goods.service.js'
-        );
-        const { JuheExchangeService } = await import(
-          '../../src/site/juhe-exchange.service.js'
-        );
 
-        const priceSvc = app.get(AmazonPriceService);
-        Object.defineProperty(priceSvc, 'fetchUsdPrice', {
-          configurable: true,
-          value: async () => {
-            throw new ServiceUnavailableException(
-              'e2e: Bright Data disabled in Vitest',
-            );
-          },
-        });
+      const { ServiceUnavailableException } = await import('@nestjs/common');
+      const { AmazonPriceService } = await import(
+        '../../src/goods/amazon-price.service.js'
+      );
+      const { GoodsService } = await import('../../src/goods/goods.service.js');
+      const { JuheExchangeService } = await import(
+        '../../src/site/juhe-exchange.service.js'
+      );
 
-        // Stub at GoodsService HTTP-facing methods so scrapes never run
-        const goodsSvc = app.get(GoodsService);
-        Object.defineProperty(goodsSvc, 'autoSyncEmptyPrices', {
-          configurable: true,
-          value: async () => ({
+      const priceSvc = app.get(AmazonPriceService);
+      const proto = Object.getPrototypeOf(priceSvc) as AmazonPriceService & {
+        fetchUsdPrice: AmazonPriceService['fetchUsdPrice'];
+      };
+      const realFetchUsdPrice = proto.fetchUsdPrice;
+
+      const applyFetchStub = () => {
+        proto.fetchUsdPrice = async function stubFetchUsdPrice() {
+          throw new ServiceUnavailableException(
+            'e2e: Bright Data disabled in Vitest',
+          );
+        };
+      };
+      const restoreFetch = () => {
+        proto.fetchUsdPrice = realFetchUsdPrice;
+      };
+      applyFetchStub();
+
+      // Keep real syncItemPrice/syncPrices so status guards still run.
+      // Only stub cron bulk scrape so price-sync doesn't walk the whole DB.
+      const goodsSvc = app.get(GoodsService);
+      Object.defineProperty(goodsSvc, 'autoSyncEmptyPrices', {
+        configurable: true,
+        value: async () => {
+          await new Promise((r) => setTimeout(r, 400));
+          return {
             orders: 0,
             itemsTried: 0,
             itemsOk: 0,
             itemsFail: 0,
-          }),
-        });
-        Object.defineProperty(goodsSvc, 'syncItemPrice', {
-          configurable: true,
-          value: async () => {
-            throw new ServiceUnavailableException(
-              'e2e: Bright Data disabled in Vitest',
-            );
-          },
-        });
-        Object.defineProperty(goodsSvc, 'syncPrices', {
-          configurable: true,
-          value: async (_actor: string, _id: number, mode: 'all' | 'empty') => ({
-            mode,
-            results: [],
-          }),
-        });
+          };
+        },
+      });
 
-        const juhe = app.get(JuheExchangeService);
-        Object.defineProperty(juhe, 'syncFromJuhe', {
-          configurable: true,
-          value: async () => ({ updated: [] as string[] }),
-        });
-      }
+      const juhe = app.get(JuheExchangeService);
+      Object.defineProperty(juhe, 'syncFromJuhe', {
+        configurable: true,
+        value: async () => ({ updated: [] as string[] }),
+      });
 
-      // Clear leftover leases from killed runs (price-sync lease is 30m)
       {
         const { sql } = await import('drizzle-orm');
         const { db } = await import('../../src/db/index.js');
@@ -129,6 +123,8 @@ export function ensureE2eApp(): Promise<E2eApp> {
           await app.close();
           boot = null;
         },
+        enableLiveBrightData: restoreFetch,
+        disableLiveBrightData: applyFetchStub,
       };
     })();
   }

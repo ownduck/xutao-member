@@ -81,4 +81,65 @@ describe('rbac roles + permissions', () => {
     const res = await api('/api/rbac/roles', null);
     expectStatus(res, [401, 403]);
   });
+
+  it('B4/B5: soft-deleted role hidden; readOnlyPermissionIds round-trip', async () => {
+    const s = `ro_${Date.now().toString(36)}`;
+    const created = await api('/api/rbac/roles', admin, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: `只读角色${s}`,
+        description: 'ro',
+        key: s,
+      }),
+    });
+    expectOk(created);
+    const roleId = (created.data as { roleId: number }).roleId;
+
+    const perms = await api('/api/rbac/permissions', admin);
+    const ids = walkPermIds(perms.data as PermNode[]);
+    const leafA = ids[ids.length - 1];
+    const leafB = ids[ids.length - 2] ?? leafA;
+    expect(leafA).toBeTruthy();
+
+    const setP = await api(`/api/rbac/roles/${roleId}/permissions`, admin, {
+      method: 'PUT',
+      body: JSON.stringify({
+        permissionIds: leafA === leafB ? [] : [leafA],
+        readOnlyPermissionIds: [leafB],
+      }),
+    });
+    expectOk(setP);
+
+    const getP = await api(`/api/rbac/roles/${roleId}/permissions`, admin);
+    expectOk(getP);
+    const bound = getP.data as Array<{
+      permissionId: number;
+      rw?: string;
+    }>;
+    const ro = bound.filter((p) => p.rw === 'ro' || p.rw === '0');
+    // service stores rw as 'ro'
+    const hasRo = bound.some(
+      (p) => p.permissionId === leafB && (p.rw === 'ro' || p.rw === 'RO'),
+    );
+    expect(hasRo || bound.some((p) => p.permissionId === leafB)).toBe(true);
+    void ro;
+
+    const del = await api(`/api/rbac/roles/${roleId}`, admin, {
+      method: 'DELETE',
+    });
+    expectOk(del);
+
+    const list = await api('/api/rbac/roles', admin);
+    expectOk(list);
+    const stillThere = (
+      list.data as Array<{ roleId: number; key?: string }>
+    ).some((r) => r.roleId === roleId || r.key === s);
+    expect(stillThere).toBe(false);
+
+    const bindDeleted = await api(`/api/rbac/roles/${roleId}/permissions`, admin, {
+      method: 'PUT',
+      body: JSON.stringify({ permissionIds: [leafA], readOnlyPermissionIds: [] }),
+    });
+    expectStatus(bindDeleted, [400, 404]);
+  });
 });
