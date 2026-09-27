@@ -22,4 +22,5 @@ pnpm-lock.yaml
 package-lock.json
 *.log
 server/uploads/
+server/public/
 server/e2e-full-out.txt

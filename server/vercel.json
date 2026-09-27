@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd .. && npm install",
+  "buildCommand": "cd .. && npm run build",
+  "crons": [
+    {
+      "path": "/api/cron/exchange-rates",
+      "schedule": "0 18 * * *"
+    }
+  ]
+}

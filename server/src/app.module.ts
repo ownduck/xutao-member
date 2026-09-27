@@ -19,7 +19,8 @@ const staticModules =
   process.env.NODE_ENV === 'production'
     ? [
         ServeStaticModule.forRoot({
-          rootPath: join(__dirname, '..', '..', 'web', 'dist'),
+          // Copied from web/dist by `npm run build` (scripts/copy-web-dist.mjs)
+          rootPath: join(__dirname, '..', 'public'),
           exclude: ['/api*'],
         }),
       ]

@@ -1,8 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/exchange-rates",
-      "schedule": "0 18 * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rootDirectory": "server"
 }

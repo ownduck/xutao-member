@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "concurrently -n web,server -c cyan,magenta \"npm run dev -w web\" \"npm run dev -w server\"",
-    "build": "npm run build -w web && npm run build -w server",
+    "build": "npm run build -w web && npm run build -w server && node scripts/copy-web-dist.mjs",
     "start": "npm run start:prod -w server",
     "db:generate": "npm run db:generate -w server",
     "db:migrate": "npm run db:migrate -w server",
