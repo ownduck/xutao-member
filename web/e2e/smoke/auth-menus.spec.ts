@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { loginViaApi, SEED } from '../helpers/login'
 import {
   expectMenuVisible,
+  expandAllMenus,
   openProfileMenu,
   waitForAppReady,
 } from '../helpers/nav'
@@ -102,6 +103,10 @@ test.describe('B3: admin menus', () => {
   test('admin sidebar + debug mode', async ({ page }) => {
     await page.goto('/dashboard')
     await waitForAppReady(page)
+    await expandAllMenus(page)
+    await expect(
+      page.locator('.ant-layout-sider').getByText('订单管理', { exact: true }),
+    ).toBeVisible()
     await expectMenuVisible(
       page,
       [

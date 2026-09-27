@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { expectOk, expectStatus } from './helpers/assert.js';
+import { expectOk, expectPageResult, expectStatus } from './helpers/assert.js';
 import { ensureE2eApp } from './helpers/app.js';
 import { api, SEED, signIn } from './helpers/auth.js';
 
@@ -18,18 +18,27 @@ describe('goods', () => {
     dealer = await signIn(SEED.dealer.email, SEED.dealer.password);
   });
 
-  it('template + list endpoints', async () => {
+  it('template + list endpoints (paged)', async () => {
     const tpl = await api('/api/goods/orders/template', dealer);
     expectOk(tpl);
 
-    const reserve = await api('/api/goods/orders/reserve', dealer);
-    expectOk(reserve);
+    const reserve = expectPageResult(
+      await api('/api/goods/orders/reserve?page=1&pageSize=5', dealer),
+      'reserve list',
+    );
+    expect(reserve.pageSize).toBe(5);
 
-    const fulfill = await api('/api/goods/orders/fulfill', ops);
-    expectOk(fulfill);
+    const fulfill = expectPageResult(
+      await api('/api/goods/orders/fulfill?page=1&pageSize=5', ops),
+      'fulfill list',
+    );
+    expect(fulfill.page).toBe(1);
 
-    const history = await api('/api/goods/orders/history', admin);
-    expectOk(history);
+    const history = expectPageResult(
+      await api('/api/goods/orders/history?page=1&pageSize=5', admin),
+      'history list',
+    );
+    expect(Array.isArray(history.items)).toBe(true);
   });
 
   it('import order from excel', async () => {

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { expectOk, expectStatus } from './helpers/assert.js';
+import { expectOk, expectPageResult, expectStatus } from './helpers/assert.js';
 import { ensureE2eApp } from './helpers/app.js';
 import { api, SEED, signIn } from './helpers/auth.js';
 
@@ -21,9 +21,10 @@ describe('finance', () => {
     expect(dealerId).toBeTruthy();
   });
 
-  it('dealers / wallet / trade log', async () => {
+  it('dealers / wallet / trade log page shape', async () => {
     const wallets = await api('/api/finance/wallet/list', admin);
     expectOk(wallets);
+    expect(Array.isArray(wallets.data), 'wallet still array').toBe(true);
     const w0 = (wallets.data as Array<{ id: number }>)?.[0];
     expect(w0).toBeTruthy();
 
@@ -33,8 +34,13 @@ describe('finance', () => {
     );
     expectOk(detail);
 
-    const logs = await api('/api/finance/trade/log', admin);
-    expectOk(logs);
+    const logs = expectPageResult(
+      await api('/api/finance/trade/log?page=1&pageSize=5', admin),
+      'trade log',
+    );
+    expect(logs.page).toBe(1);
+    expect(logs.pageSize).toBe(5);
+    expect(logs.items.length).toBeLessThanOrEqual(5);
   });
 
   it('dealer denied recharge/deduction create', async () => {
@@ -59,7 +65,7 @@ describe('finance', () => {
     expectStatus(denyDc, 403);
   });
 
-  it('recharge create + self-verify deny + admin approve', async () => {
+  it('recharge create + ops self-verify deny + admin approve', async () => {
     const rc = await api('/api/finance/recharge', ops, {
       method: 'POST',
       body: JSON.stringify({
@@ -81,7 +87,7 @@ describe('finance', () => {
         verifyRemark: 'self',
       }),
     });
-    expectStatus(self, 403, 'self verify deny');
+    expectStatus(self, 403, 'ops self verify deny');
 
     const ok = await api('/api/finance/recharge/verify', admin, {
       method: 'PUT',
@@ -93,8 +99,57 @@ describe('finance', () => {
     });
     expectOk(ok, 'recharge approve');
 
-    const listRc = await api('/api/finance/recharge/list', admin);
-    expectOk(listRc);
+    const listRc = expectPageResult(
+      await api('/api/finance/recharge/list?page=1&pageSize=10', admin),
+      'recharge list',
+    );
+    expect(listRc.pageSize).toBe(10);
+  });
+
+  it('super admin can self-verify recharge and deduction', async () => {
+    const rc = await api('/api/finance/recharge', admin, {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: dealerId,
+        amount: 0.88,
+        currencyCode: 'USD',
+        remark: 'e2e-admin-self-rc',
+      }),
+    });
+    expectOk(rc, 'admin recharge create');
+    const rcNo = (rc.data as { rechargeNumber: string }).rechargeNumber;
+
+    const rcSelf = await api('/api/finance/recharge/verify', admin, {
+      method: 'PUT',
+      body: JSON.stringify({
+        rechargeNumber: rcNo,
+        verify: true,
+        verifyRemark: 'admin-self',
+      }),
+    });
+    expectOk(rcSelf, 'admin recharge self-verify');
+
+    const dc = await api('/api/finance/deduction', admin, {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: dealerId,
+        amount: 0.11,
+        currencyCode: 'USD',
+        remark: 'e2e-admin-self-dc',
+      }),
+    });
+    expectOk(dc, 'admin deduction create');
+    const dcNo = (dc.data as { deductionNumber: string }).deductionNumber;
+
+    const dcSelf = await api('/api/finance/deduction/verify', admin, {
+      method: 'PUT',
+      body: JSON.stringify({
+        deductionNumber: dcNo,
+        verify: true,
+        verifyRemark: 'admin-self',
+      }),
+    });
+    expectOk(dcSelf, 'admin deduction self-verify');
   });
 
   it('deduction create + self-verify deny + approve; insufficient → 400', async () => {
@@ -118,7 +173,7 @@ describe('finance', () => {
         verifyRemark: 'self',
       }),
     });
-    expectStatus(self, 403, 'deduction self deny');
+    expectStatus(self, 403, 'ops deduction self deny');
 
     const ok = await api('/api/finance/deduction/verify', admin, {
       method: 'PUT',
@@ -130,8 +185,11 @@ describe('finance', () => {
     });
     expectOk(ok, 'deduction approve');
 
-    const listDc = await api('/api/finance/deduction/list', admin);
-    expectOk(listDc);
+    const listDc = expectPageResult(
+      await api('/api/finance/deduction/list?page=1&pageSize=10', admin),
+      'deduction list',
+    );
+    expect(listDc.page).toBe(1);
 
     const huge = await api('/api/finance/deduction', ops, {
       method: 'POST',

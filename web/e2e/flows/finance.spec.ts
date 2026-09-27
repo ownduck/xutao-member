@@ -47,6 +47,23 @@ test.describe('F: finance wallet / trade / recharge', () => {
     await ctx.close()
   })
 
+  test('F3b: admin can self-audit recharge', async ({ browser }) => {
+    const remark = `pw-admin-self-${Date.now()}`
+    const ctx = await browser.newContext({
+      storageState: path.join(authDir, 'admin.json'),
+    })
+    const page = await ctx.newPage()
+    await createRecharge(page, 1.01, remark)
+    const row = page
+      .locator('.ant-table-tbody tr')
+      .filter({ hasText: remark })
+      .first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(row.getByRole('button', { name: '审核' })).toBeEnabled()
+    await auditRowByRemark(page, remark, true)
+    await ctx.close()
+  })
+
   test('F5: admin approve recharge', async ({ browser }) => {
     const remark = `pw-approve-${Date.now()}`
     const opsCtx = await browser.newContext({

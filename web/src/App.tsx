@@ -17,32 +17,37 @@ import { UsersPage } from './pages/rbac/UsersPage'
 import { ExchangeRatesPage } from './pages/site/ExchangeRatesPage'
 import { SiteConfigPage } from './pages/site/SiteConfigPage'
 
+function FullPageSpin() {
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Spin size="large" />
+    </div>
+  )
+}
+
 function ProtectedLayout() {
   const location = useLocation()
   const { data: session, isPending } = useSession()
   const { loading, user } = useAuth()
   const hasSessionUser = Boolean(session?.user || user)
 
-  // Prefer keeping the shell mounted. Session focus-refetch must not tear down
-  // routes just because isPending flickered or get-session is slow after idle.
+  // Prefer keeping the shell mounted after first bootstrap. Session focus-refetch
+  // must not tear down routes (loading stays false once bootstrapped).
   if (!hasSessionUser) {
-    if (isPending || loading) {
-      return (
-        <div
-          style={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Spin size="large" />
-        </div>
-      )
-    }
+    if (isPending || loading) return <FullPageSpin />
     const redirect = encodeURIComponent(location.pathname + location.search)
     return <Navigate to={`/login?redirect=${redirect}`} replace />
   }
+
+  // Cold start: wait for /api/me so sidebar filters by real permissions.
+  if (loading) return <FullPageSpin />
 
   return (
     <AdminShell>

@@ -45,6 +45,10 @@ test.describe('D: goods create + reserve', () => {
     await expect(page.locator('.ant-table-tbody')).toBeVisible({
       timeout: 45_000,
     })
+    // Server-side pagination: Ant Design shows pager even for a single page.
+    await expect(page.locator('.ant-pagination')).toBeVisible({
+      timeout: 15_000,
+    })
 
     await openReserveDetail(page, orderId)
     await fillUnitPricesAndSave(page, [10, 5])

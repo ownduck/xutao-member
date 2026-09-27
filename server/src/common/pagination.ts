@@ -19,14 +19,22 @@ export function parsePageQuery(query: PageQuery): {
   pageSize: number;
   offset: number;
 } {
+  const rawPage = Number.parseInt(String(query.page ?? DEFAULT_PAGE), 10);
   const page = Math.max(
     1,
-    Number.parseInt(String(query.page ?? DEFAULT_PAGE), 10) || DEFAULT_PAGE,
+    Number.isFinite(rawPage) && rawPage > 0 ? rawPage : DEFAULT_PAGE,
   );
-  const rawSize =
-    Number.parseInt(String(query.pageSize ?? DEFAULT_PAGE_SIZE), 10) ||
-    DEFAULT_PAGE_SIZE;
-  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, rawSize));
+  const rawSize = Number.parseInt(
+    String(query.pageSize ?? DEFAULT_PAGE_SIZE),
+    10,
+  );
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(
+      1,
+      Number.isFinite(rawSize) && rawSize > 0 ? rawSize : DEFAULT_PAGE_SIZE,
+    ),
+  );
   return { page, pageSize, offset: (page - 1) * pageSize };
 }
 
