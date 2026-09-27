@@ -261,41 +261,38 @@ export class FinanceService {
             .from(financeRecharge)
             .orderBy(desc(financeRecharge.createTime));
 
-    const result = [];
-    for (const row of rows) {
-      const [creator] = await db
+    const nameIds = [
+      ...new Set(
+        rows.flatMap((r) =>
+          [r.createAdminId, r.verifyAdminId].filter(
+            (id): id is string => !!id,
+          ),
+        ),
+      ),
+    ];
+    const nameMap = new Map<string, string>();
+    if (nameIds.length > 0) {
+      const users = await db
         .select({
           id: user.id,
           name: user.name,
           realname: user.realname,
         })
         .from(user)
-        .where(eq(user.id, row.createAdminId))
-        .limit(1);
-      let verifier: { id: string; name: string; realname: string | null } | null =
-        null;
-      if (row.verifyAdminId) {
-        const [v] = await db
-          .select({
-            id: user.id,
-            name: user.name,
-            realname: user.realname,
-          })
-          .from(user)
-          .where(eq(user.id, row.verifyAdminId))
-          .limit(1);
-        verifier = v ?? null;
+        .where(inArray(user.id, nameIds));
+      for (const u of users) {
+        nameMap.set(u.id, u.realname || u.name || u.id);
       }
-      result.push({
-        ...row,
-        createAdminName:
-          creator?.realname || creator?.name || row.createAdminId,
-        verifyAdminName: verifier
-          ? verifier.realname || verifier.name
-          : null,
-      });
     }
-    return result;
+
+    return rows.map((row) => ({
+      ...row,
+      createAdminName:
+        nameMap.get(row.createAdminId) || row.createAdminId,
+      verifyAdminName: row.verifyAdminId
+        ? nameMap.get(row.verifyAdminId) || null
+        : null,
+    }));
   }
 
   async createRecharge(
@@ -491,32 +488,40 @@ export class FinanceService {
             .from(financeDeduction)
             .orderBy(desc(financeDeduction.createTime));
 
-    const result = [];
-    for (const row of rows) {
-      const [creator] = await db
-        .select({ name: user.name, realname: user.realname })
+    const nameIds = [
+      ...new Set(
+        rows.flatMap((r) =>
+          [r.createAdminId, r.verifyAdminId].filter(
+            (id): id is string => !!id,
+          ),
+        ),
+      ),
+    ];
+    const nameMap = new Map<string, string>();
+    if (nameIds.length > 0) {
+      const users = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          realname: user.realname,
+        })
         .from(user)
-        .where(eq(user.id, row.createAdminId))
-        .limit(1);
-      let verifyAdminName: string | null = null;
-      if (row.verifyAdminId) {
-        const [v] = await db
-          .select({ name: user.name, realname: user.realname })
-          .from(user)
-          .where(eq(user.id, row.verifyAdminId))
-          .limit(1);
-        verifyAdminName = v?.realname || v?.name || null;
+        .where(inArray(user.id, nameIds));
+      for (const u of users) {
+        nameMap.set(u.id, u.realname || u.name || u.id);
       }
-      result.push({
-        ...row,
-        createAdminName: creator?.realname || creator?.name || null,
-        verifyAdminName,
-        order: row.orderId
-          ? { id: row.orderId, orderNumber: row.orderNumber }
-          : null,
-      });
     }
-    return result;
+
+    return rows.map((row) => ({
+      ...row,
+      createAdminName: nameMap.get(row.createAdminId) || null,
+      verifyAdminName: row.verifyAdminId
+        ? nameMap.get(row.verifyAdminId) || null
+        : null,
+      order: row.orderId
+        ? { id: row.orderId, orderNumber: row.orderNumber }
+        : null,
+    }));
   }
 
   async createDeduction(

@@ -13,7 +13,9 @@
     "db:generate": "npm run db:generate -w server",
     "db:migrate": "npm run db:migrate -w server",
     "db:push": "npm run db:push -w server",
-    "db:seed": "npm run db:seed -w server"
+    "db:seed": "npm run db:seed -w server",
+    "test:e2e": "npm run test:e2e -w web",
+    "test:e2e:api": "npm run test:e2e -w server"
   },
   "devDependencies": {
     "concurrently": "^9.2.4"

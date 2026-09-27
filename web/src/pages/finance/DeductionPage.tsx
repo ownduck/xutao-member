@@ -101,6 +101,7 @@ export function DeductionPage() {
           '—'
         ),
     },
+    { title: '备注', dataIndex: 'remark', render: (v) => v || '—' },
     { title: '提交人', dataIndex: 'createAdminName', render: (v) => v || '—' },
     {
       title: '状态',

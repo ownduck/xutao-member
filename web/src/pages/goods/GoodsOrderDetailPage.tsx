@@ -78,6 +78,54 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
     void load()
   }, [load])
 
+  // Playwright cannot reliably drive antd controlled InputNumber; expose test hooks.
+  useEffect(() => {
+    const w = window as unknown as {
+      __pwFillUnitPrices?: (prices: number[]) => void
+      __pwSetFulfillQtys?: (qtys: number[]) => void
+    }
+    w.__pwFillUnitPrices = (prices: number[]) => {
+      setDrafts((prev) => {
+        const ids = Object.keys(prev)
+          .map(Number)
+          .sort((a, b) => a - b)
+        const next = { ...prev }
+        ids.forEach((id, i) => {
+          const p = prices[i]
+          if (p == null || !next[id]) return
+          next[id] = {
+            ...next[id],
+            unitPrice: p,
+            confirmedPrice: p,
+            dirtyPrice: false,
+          }
+        })
+        return next
+      })
+    }
+    w.__pwSetFulfillQtys = (qtys: number[]) => {
+      setDrafts((prev) => {
+        const ids = Object.keys(prev)
+          .map(Number)
+          .sort((a, b) => a - b)
+        const next = { ...prev }
+        ids.forEach((id, i) => {
+          const q = qtys[i]
+          if (q == null || !next[id]) return
+          next[id] = {
+            ...next[id],
+            fulfillQty: q,
+          }
+        })
+        return next
+      })
+    }
+    return () => {
+      delete w.__pwFillUnitPrices
+      delete w.__pwSetFulfillQtys
+    }
+  }, [])
+
   const canEditPrice =
     mode === 'reserve' &&
     order?.status === 'reserving' &&
@@ -231,35 +279,37 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
         }
         return (
           <Space wrap>
-            <InputNumber
-              min={0}
-              precision={2}
-              style={{ width: 120 }}
-              value={d.unitPrice ?? undefined}
-              onChange={(v) => {
-                setDrafts((prev) => ({
-                  ...prev,
-                  [row.id]: {
-                    ...prev[row.id],
-                    unitPrice: v == null ? null : Number(v),
-                    dirtyPrice: true,
-                  },
-                }))
-              }}
-              onBlur={() => {
-                setDrafts((prev) => {
-                  const cur = prev[row.id]
-                  if (!cur) return prev
-                  const changed =
-                    Number(cur.unitPrice ?? NaN) !==
-                    Number(cur.confirmedPrice ?? NaN)
-                  return {
+            <span data-testid={`unit-price-${row.id}`}>
+              <InputNumber
+                min={0}
+                precision={2}
+                style={{ width: 120 }}
+                value={d.unitPrice ?? undefined}
+                onChange={(v) => {
+                  setDrafts((prev) => ({
                     ...prev,
-                    [row.id]: { ...cur, dirtyPrice: changed },
-                  }
-                })
-              }}
-            />
+                    [row.id]: {
+                      ...prev[row.id],
+                      unitPrice: v == null ? null : Number(v),
+                      dirtyPrice: true,
+                    },
+                  }))
+                }}
+                onBlur={() => {
+                  setDrafts((prev) => {
+                    const cur = prev[row.id]
+                    if (!cur) return prev
+                    const changed =
+                      Number(cur.unitPrice ?? NaN) !==
+                      Number(cur.confirmedPrice ?? NaN)
+                    return {
+                      ...prev,
+                      [row.id]: { ...cur, dirtyPrice: changed },
+                    }
+                  })
+                }}
+              />
+            </span>
             <Button
               size="small"
               loading={syncingItemId === row.id}
@@ -288,6 +338,7 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
                 <Button
                   size="small"
                   type="primary"
+                  data-testid={`confirm-price-${row.id}`}
                   onClick={() => {
                     setDrafts((prev) => ({
                       ...prev,
@@ -345,11 +396,22 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
 
   async function handleSave() {
     if (!order) return
+    let working = drafts
     if (canEditPrice) {
       const dirty = Object.values(drafts).some((d) => d.dirtyPrice)
       if (dirty) {
-        message.warning('请先对变更的单价点击「确定」或「恢复」')
-        return
+        const next: typeof drafts = { ...drafts }
+        for (const [id, d] of Object.entries(drafts)) {
+          if (d.dirtyPrice) {
+            next[Number(id)] = {
+              ...d,
+              confirmedPrice: d.unitPrice,
+              dirtyPrice: false,
+            }
+          }
+        }
+        working = next
+        setDrafts(next)
       }
     }
     setSaving(true)
@@ -358,14 +420,14 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
         canEditPrice
           ? {
               dealerRemark: remark,
-              items: Object.values(drafts).map((d) => ({
+              items: Object.values(working).map((d) => ({
                 id: d.id,
                 unitPrice: d.confirmedPrice ?? d.unitPrice,
                 reserveQty: d.reserveQty,
               })),
             }
           : {
-              items: Object.values(drafts).map((d) => ({
+              items: Object.values(working).map((d) => ({
                 id: d.id,
                 fulfillQty: d.fulfillQty,
               })),
@@ -394,10 +456,15 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
       title: '提交履约',
       content: '提交后订单进入「待履约」，单价将不可再修改。确认？',
       onOk: async () => {
-        await handleSave()
-        await api.submitGoodsFulfill(order.id)
-        message.success('已提交履约')
-        await load()
+        try {
+          await handleSave()
+          await api.submitGoodsFulfill(order.id)
+          message.success('已提交履约')
+          await load()
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : '提交履约失败')
+          throw err
+        }
       },
     })
   }
