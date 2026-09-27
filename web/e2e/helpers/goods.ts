@@ -107,3 +107,22 @@ export async function submitFulfill(page: Page) {
     timeout: 30_000,
   })
 }
+
+/** Cancel from reserve list row; confirms modal. */
+export async function cancelReserveOrderFromList(page: Page, orderId: number) {
+  await page.goto('/goods/reserve')
+  await waitForAppReady(page)
+  const row = page.locator('.ant-table-tbody tr').filter({
+    has: page.locator(`a[href="/goods/reserve/${orderId}"]`),
+  })
+  await expect(row).toBeVisible({ timeout: 45_000 })
+  await row.getByRole('button', { name: '取消' }).click()
+  const dialog = page.locator('.ant-modal-confirm').filter({ hasText: '取消订单' })
+  await expect(dialog).toBeVisible({ timeout: 10_000 })
+  await dialog.getByRole('button', { name: /确认取消/ }).click()
+  await expect(page.getByText('订单已取消')).toBeVisible({ timeout: 30_000 })
+  await expect(row.locator('.ant-tag', { hasText: '已取消' })).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(row.getByRole('button', { name: '取消' })).toHaveCount(0)
+}

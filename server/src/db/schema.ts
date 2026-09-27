@@ -241,6 +241,8 @@ export const goodsOrder = pgTable('goods_order', {
   currencyCode: text('currency_code').notNull().default('USD'),
   /** 0=价格未齐 1=全部单价已填 */
   priceStatus: integer('price_status').notNull().default(0),
+  /** 0=正常 1=已取消 */
+  cancelStatus: integer('cancel_status').notNull().default(0),
   dealerRemark: text('dealer_remark'),
   totalAmount: numeric('total_amount', { precision: 12, scale: 2 }),
   totalAmountBase: numeric('total_amount_base', { precision: 12, scale: 2 }),

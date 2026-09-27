@@ -172,6 +172,15 @@ export class GoodsController {
     return this.goodsService.submitFulfill(session.user.id, id);
   }
 
+  @Post('orders/:id/cancel')
+  @RequirePermission('goods_reserve_order', 'rw')
+  cancelOrder(
+    @Session() session: UserSession<typeof auth>,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.goodsService.cancelOrder(session.user.id, id);
+  }
+
   @Post('orders/:id/submit-complete')
   @RequirePermission('goods_fulfill_order', 'rw')
   submitComplete(

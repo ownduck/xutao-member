@@ -6,6 +6,7 @@ export type GoodsOrder = {
   id: number;
   status: string;
   priceStatus: number;
+  cancelStatus?: number;
   currencyCode?: string;
   items: Array<{
     id: number;

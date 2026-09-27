@@ -19,10 +19,12 @@ import { PermissionService } from '../rbac/permission.service.js';
 import { SiteService } from '../site/site.service.js';
 import { AmazonPriceService } from './amazon-price.service.js';
 import {
+  CANCEL_STATUS,
   FULFILL_LIST_STATUSES,
   HISTORY_LIST_STATUSES,
   ORDER_STATUS,
   RESERVE_LIST_STATUSES,
+  canCancelOrder,
   computeFulfillStatus,
   type OrderStatus,
 } from './order-status.js';
@@ -191,6 +193,10 @@ export class GoodsService {
     if (query.status && allowed.includes(query.status as OrderStatus)) {
       conditions.push(eq(goodsOrder.status, query.status));
     }
+    // Cancelled pending_fulfill must not appear in fulfill queue.
+    if (query.scope === 'fulfill') {
+      conditions.push(eq(goodsOrder.cancelStatus, CANCEL_STATUS.NORMAL));
+    }
 
     if (query.scope === 'reserve' || (query.scope === 'history' && isDealer && !isOps && !isSuper)) {
       conditions.push(eq(goodsOrder.dealerUserId, actorId));
@@ -309,6 +315,12 @@ export class GoodsService {
     };
   }
 
+  private assertNotCancelled(order: { cancelStatus?: number | null }) {
+    if (Number(order.cancelStatus) === CANCEL_STATUS.CANCELLED) {
+      throw new BadRequestException('订单已取消，不可操作');
+    }
+  }
+
   async updateOrder(
     actorId: string,
     orderId: number,
@@ -323,6 +335,7 @@ export class GoodsService {
     },
   ) {
     const detail = await this.getOrderDetail(actorId, orderId);
+    this.assertNotCancelled(detail);
     const {
       isDealer,
       isOps,
@@ -452,6 +465,7 @@ export class GoodsService {
 
   async submitFulfill(actorId: string, orderId: number) {
     const detail = await this.getOrderDetail(actorId, orderId);
+    this.assertNotCancelled(detail);
     const { isDealer, isSuperAdmin: isSuper } =
       await this.permissionService.getActorFlags(actorId);
     if (!isDealer && !isSuper) {
@@ -484,8 +498,9 @@ export class GoodsService {
 
   private async assertDealerCanEditReserving(
     actorId: string,
-    order: { status: string; dealerUserId: string },
+    order: { status: string; dealerUserId: string; cancelStatus?: number | null },
   ) {
+    this.assertNotCancelled(order);
     if (order.status !== ORDER_STATUS.RESERVING) {
       throw new BadRequestException('仅预约中订单可同步价格');
     }
@@ -614,6 +629,7 @@ export class GoodsService {
       .where(
         and(
           eq(goodsOrder.priceStatus, 0),
+          eq(goodsOrder.cancelStatus, CANCEL_STATUS.NORMAL),
           eq(goodsOrder.status, ORDER_STATUS.RESERVING),
         ),
       )
@@ -694,6 +710,34 @@ export class GoodsService {
     };
   }
 
+  async cancelOrder(actorId: string, orderId: number) {
+    const detail = await this.getOrderDetail(actorId, orderId);
+    const { isDealer, isSuperAdmin: isSuper } =
+      await this.permissionService.getActorFlags(actorId);
+    if (!isDealer && !isSuper) {
+      throw new ForbiddenException('仅经销商可取消预约订单');
+    }
+    if (isDealer && detail.dealerUserId !== actorId) {
+      throw new ForbiddenException('无权操作');
+    }
+    if (Number(detail.cancelStatus) === CANCEL_STATUS.CANCELLED) {
+      throw new BadRequestException('订单已取消');
+    }
+    if (!canCancelOrder(detail.status, detail.cancelStatus)) {
+      throw new BadRequestException('仅预约中或待履约订单可取消');
+    }
+
+    await db
+      .update(goodsOrder)
+      .set({
+        cancelStatus: CANCEL_STATUS.CANCELLED,
+        updateTime: new Date(),
+      })
+      .where(eq(goodsOrder.id, orderId));
+
+    return this.getOrderDetail(actorId, orderId);
+  }
+
   async submitComplete(actorId: string, orderId: number) {
     const { isOps, isSuperAdmin: isSuper } =
       await this.permissionService.getActorFlags(actorId);
@@ -702,6 +746,7 @@ export class GoodsService {
     }
 
     const detail = await this.getOrderDetail(actorId, orderId);
+    this.assertNotCancelled(detail);
     if (
       detail.status !== ORDER_STATUS.PARTIAL_FULFILL &&
       detail.status !== ORDER_STATUS.FULFILLED

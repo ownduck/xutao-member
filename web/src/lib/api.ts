@@ -421,6 +421,10 @@ export const api = {
     request<GoodsOrder>(`/api/goods/orders/${id}/submit-fulfill`, {
       method: 'POST',
     }),
+  cancelGoodsOrder: (id: number) =>
+    request<GoodsOrder>(`/api/goods/orders/${id}/cancel`, {
+      method: 'POST',
+    }),
   submitGoodsComplete: (id: number) =>
     request<{ order: GoodsOrder; deduction: FinanceDeduction }>(
       `/api/goods/orders/${id}/submit-complete`,
@@ -548,6 +552,8 @@ export type GoodsOrder = {
   status: GoodsOrderStatus
   currencyCode: string
   priceStatus?: number
+  /** 0=正常 1=已取消 */
+  cancelStatus?: number
   dealerRemark?: string | null
   totalAmount?: string | null
   totalAmountBase?: string | null

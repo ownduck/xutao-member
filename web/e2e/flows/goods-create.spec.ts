@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  cancelReserveOrderFromList,
   createReserveOrder,
   fillUnitPricesAndSave,
   openReserveDetail,
@@ -103,6 +104,22 @@ test.describe('D: goods create + reserve', () => {
       expect(syncBtn).toBeEnabled({ timeout: 45_000 }),
     ]).catch(() => undefined)
     await expect(syncBtn).toBeEnabled({ timeout: 45_000 })
+  })
+
+  test('D9: cancel reserving order from list', async ({ page }) => {
+    const stamp = Date.now().toString(36)
+    const orderId = await createReserveOrder(page, [
+      [`https://www.amazon.com/dp/B0CANCEL${stamp}`, 1],
+    ])
+    expect(orderId).toBeGreaterThan(0)
+    await cancelReserveOrderFromList(page, orderId)
+
+    await page.goto(`/goods/reserve/${orderId}`)
+    await waitForAppReady(page)
+    await expect(page.getByText(/订单\s/)).toBeVisible({ timeout: 60_000 })
+    await expect(page.locator('.ant-tag', { hasText: '已取消' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '取消订单' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '提交履约' })).toHaveCount(0)
   })
 })
 

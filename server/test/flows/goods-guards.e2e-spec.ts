@@ -146,4 +146,41 @@ describe('flow: goods guards', () => {
     );
     expectStatus(syncAfter, 400, 'sync after submit');
   });
+
+  it('cancel: ops denied; partial_fulfill denied', async () => {
+    const stamp = Date.now().toString(36);
+    const imported = await importGoodsOrder(dealer, [
+      [`https://www.amazon.com/dp/B0CGUARD${stamp}`, 2],
+    ]);
+    const order = imported.order!;
+
+    const opsCancel = await api(`/api/goods/orders/${order.id}/cancel`, ops, {
+      method: 'POST',
+    });
+    expectStatus(opsCancel, [401, 403], 'ops cannot cancel');
+
+    expectOk(await priceOrder(dealer, order, [8]));
+    expectOk(
+      await api(`/api/goods/orders/${order.id}/submit-fulfill`, dealer, {
+        method: 'POST',
+      }),
+    );
+    expectOk(
+      await api(`/api/goods/orders/${order.id}`, ops, {
+        method: 'PUT',
+        body: JSON.stringify({
+          items: [{ id: order.items[0].id, fulfillQty: 1 }],
+        }),
+      }),
+    );
+
+    const detail = await api(`/api/goods/orders/${order.id}`, dealer);
+    expectOk(detail);
+    expect((detail.data as GoodsOrder).status).toBe('partial_fulfill');
+
+    const deny = await api(`/api/goods/orders/${order.id}/cancel`, dealer, {
+      method: 'POST',
+    });
+    expectStatus(deny, 400, 'partial cannot cancel');
+  });
 });

@@ -129,13 +129,22 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
   const canEditPrice =
     mode === 'reserve' &&
     order?.status === 'reserving' &&
+    order.cancelStatus !== 1 &&
     (isDealer() || can('goods_reserve_order', 'rw'))
 
   const canEditFulfill =
     mode === 'fulfill' &&
     order &&
+    order.cancelStatus !== 1 &&
     ['pending_fulfill', 'partial_fulfill', 'fulfilled'].includes(order.status) &&
     (isOps() || can('goods_fulfill_order', 'rw'))
+
+  const canCancel =
+    mode === 'reserve' &&
+    order &&
+    order.cancelStatus !== 1 &&
+    (order.status === 'reserving' || order.status === 'pending_fulfill') &&
+    (isDealer() || can('goods_reserve_order', 'rw'))
 
   const readOnly = mode === 'history' || (!canEditPrice && !canEditFulfill)
 
@@ -485,6 +494,27 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
     })
   }
 
+  function handleCancelOrder() {
+    if (!order) return
+    Modal.confirm({
+      title: '取消订单',
+      content: `确认取消订单 ${order.orderNumber}？取消后不可恢复。`,
+      okText: '确认取消',
+      okButtonProps: { danger: true },
+      cancelText: '返回',
+      onOk: async () => {
+        try {
+          await api.cancelGoodsOrder(order.id)
+          message.success('订单已取消')
+          await load()
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : '取消失败')
+          throw err
+        }
+      },
+    })
+  }
+
   function handleSubmitComplete() {
     if (!order) return
     const isPartial = order.status === 'partial_fulfill'
@@ -518,6 +548,9 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
           {statusMeta ? (
             <Tag color={statusMeta.color}>{statusMeta.text}</Tag>
           ) : null}
+          {order.cancelStatus === 1 ? (
+            <Tag color="default">已取消</Tag>
+          ) : null}
           {order.priceStatus === 1 ? (
             <Tag color="success">价格已填完</Tag>
           ) : canEditPrice ? (
@@ -535,6 +568,11 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
           {canEditPrice ? (
             <Button type="primary" onClick={handleSubmitFulfill}>
               提交履约
+            </Button>
+          ) : null}
+          {canCancel ? (
+            <Button danger onClick={handleCancelOrder}>
+              取消订单
             </Button>
           ) : null}
           {canEditFulfill &&

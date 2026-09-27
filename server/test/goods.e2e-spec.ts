@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { expectOk, expectPageResult, expectStatus } from './helpers/assert.js';
 import { ensureE2eApp } from './helpers/app.js';
 import { api, SEED, signIn } from './helpers/auth.js';
+import { importGoodsOrder, priceOrder } from './helpers/goods.js';
 
 describe('goods', () => {
   let admin = '';
@@ -144,5 +145,78 @@ describe('goods', () => {
       completed.data as { deduction?: { deductionNumber?: string } }
     ).deduction;
     expect(deduction?.deductionNumber).toBeTruthy();
+  });
+
+  it('cancel reserving / pending_fulfill; stay in reserve; leave fulfill', async () => {
+    const stamp = Date.now().toString(36);
+
+    const reserving = await importGoodsOrder(
+      dealer,
+      [[`https://www.amazon.com/dp/B0CANCEL${stamp}A`, 1]],
+      'cancel-reserving',
+    );
+    expect(reserving.status).toBeLessThan(400);
+    const rOrder = reserving.order!;
+
+    const cancelled = await api(`/api/goods/orders/${rOrder.id}/cancel`, dealer, {
+      method: 'POST',
+    });
+    expectOk(cancelled, 'cancel reserving');
+    expect((cancelled.data as { cancelStatus: number }).cancelStatus).toBe(1);
+    expect((cancelled.data as { status: string }).status).toBe('reserving');
+
+    const reserveList = expectPageResult(
+      await api('/api/goods/orders/reserve?page=1&pageSize=50', dealer),
+      'reserve after cancel',
+    );
+    const inReserve = reserveList.items.find(
+      (o) => (o as { id: number }).id === rOrder.id,
+    ) as { cancelStatus?: number } | undefined;
+    expect(inReserve?.cancelStatus).toBe(1);
+
+    const denySubmit = await api(
+      `/api/goods/orders/${rOrder.id}/submit-fulfill`,
+      dealer,
+      { method: 'POST' },
+    );
+    expectStatus(denySubmit, 400, 'cancelled cannot submit-fulfill');
+
+    const pending = await importGoodsOrder(
+      dealer,
+      [[`https://www.amazon.com/dp/B0CANCEL${stamp}B`, 1]],
+      'cancel-pending',
+    );
+    expect(pending.status).toBeLessThan(400);
+    const pOrder = pending.order!;
+    expectOk(await priceOrder(dealer, pOrder, [9]));
+    expectOk(
+      await api(`/api/goods/orders/${pOrder.id}/submit-fulfill`, dealer, {
+        method: 'POST',
+      }),
+      'submit before cancel',
+    );
+
+    const cancelPending = await api(
+      `/api/goods/orders/${pOrder.id}/cancel`,
+      dealer,
+      { method: 'POST' },
+    );
+    expectOk(cancelPending, 'cancel pending_fulfill');
+    expect((cancelPending.data as { cancelStatus: number }).cancelStatus).toBe(
+      1,
+    );
+
+    const fulfillList = expectPageResult(
+      await api('/api/goods/orders/fulfill?page=1&pageSize=100', ops),
+      'fulfill after cancel',
+    );
+    expect(
+      fulfillList.items.some((o) => (o as { id: number }).id === pOrder.id),
+    ).toBe(false);
+
+    const again = await api(`/api/goods/orders/${pOrder.id}/cancel`, dealer, {
+      method: 'POST',
+    });
+    expectStatus(again, 400, 'already cancelled');
   });
 });

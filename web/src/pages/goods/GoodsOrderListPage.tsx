@@ -1,4 +1,4 @@
-import { Button, Card, Select, Space, Table, Tag, message } from 'antd'
+import { Button, Card, Modal, Select, Space, Table, Tag, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -11,6 +11,13 @@ type Mode = 'reserve' | 'fulfill' | 'history'
 
 const PAGE_SIZE = 20
 
+function canCancelOrder(order: GoodsOrder) {
+  return (
+    order.cancelStatus !== 1 &&
+    (order.status === 'reserving' || order.status === 'pending_fulfill')
+  )
+}
+
 export function GoodsOrderListPage({ mode }: { mode: Mode }) {
   const { can, isOps } = useAuth()
   const [loading, setLoading] = useState(false)
@@ -19,6 +26,7 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState<string>()
   const [dealerUserId, setDealerUserId] = useState<string>()
+  const [cancellingId, setCancellingId] = useState<number>()
 
   const title =
     mode === 'reserve'
@@ -78,6 +86,29 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
           ]
         : []
 
+  function handleCancel(order: GoodsOrder) {
+    Modal.confirm({
+      title: '取消订单',
+      content: `确认取消订单 ${order.orderNumber}？取消后不可恢复。`,
+      okText: '确认取消',
+      okButtonProps: { danger: true },
+      cancelText: '返回',
+      onOk: async () => {
+        setCancellingId(order.id)
+        try {
+          await api.cancelGoodsOrder(order.id)
+          message.success('订单已取消')
+          await load()
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : '取消失败')
+          throw err
+        } finally {
+          setCancellingId(undefined)
+        }
+      },
+    })
+  }
+
   const columns: ColumnsType<GoodsOrder> = [
     { title: '订单号', dataIndex: 'orderNumber', width: 160 },
     {
@@ -88,10 +119,15 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
     {
       title: '状态',
       dataIndex: 'status',
-      width: 110,
-      render: (v: string) => {
+      width: 150,
+      render: (v: string, r) => {
         const m = GOODS_STATUS_LABEL[v] ?? { text: v, color: 'default' }
-        return <Tag color={m.color}>{m.text}</Tag>
+        return (
+          <Space size={4} wrap>
+            <Tag color={m.color}>{m.text}</Tag>
+            {r.cancelStatus === 1 ? <Tag color="default">已取消</Tag> : null}
+          </Space>
+        )
       },
     },
     ...(mode === 'reserve'
@@ -132,9 +168,25 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
     },
     {
       title: '操作',
-      width: 100,
+      width: mode === 'reserve' ? 140 : 100,
       render: (_, r) => (
-        <Link to={`${detailBase}/${r.id}`}>查看</Link>
+        <Space size="middle">
+          <Link to={`${detailBase}/${r.id}`}>查看</Link>
+          {mode === 'reserve' &&
+          can('goods_reserve_order', 'rw') &&
+          canCancelOrder(r) ? (
+            <Button
+              type="link"
+              danger
+              size="small"
+              style={{ padding: 0 }}
+              loading={cancellingId === r.id}
+              onClick={() => handleCancel(r)}
+            >
+              取消
+            </Button>
+          ) : null}
+        </Space>
       ),
     },
   ]
