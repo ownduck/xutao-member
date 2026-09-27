@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { CronJobsService } from './cron-jobs.service.js';
 
 const onVercel = process.env.VERCEL === '1';
@@ -11,18 +11,7 @@ export class CronScheduler {
   constructor(private readonly cronJobs: CronJobsService) {}
 
   /** Local/long-running only; Vercel uses HTTP cron instead */
-  @Cron(CronExpression.EVERY_5_MINUTES, {
-    timeZone: 'Asia/Shanghai',
-    disabled: onVercel,
-  })
-  async handlePriceSync() {
-    const result = await this.cronJobs.runPriceSync();
-    if (result.skipped) {
-      this.logger.warn('price sync skipped (lock held)');
-    }
-  }
-
-  @Cron(CronExpression.EVERY_DAY_AT_2AM, {
+  @Cron('0 2 * * *', {
     timeZone: 'Asia/Shanghai',
     disabled: onVercel,
   })
