@@ -127,6 +127,43 @@ export class PermissionService {
     return this.hasRoleKey(userId, ROLE_KEY_OPS);
   }
 
+  /** One user row + roles query — avoids N round-trips on /api/me and list guards. */
+  async getActorFlags(userId: string): Promise<{
+    isSuperAdmin: boolean;
+    isDealer: boolean;
+    isOps: boolean;
+    roleKeys: string[];
+    roles: { roleId: number; name: string; key: string | null }[];
+  }> {
+    const [u] = await db
+      .select({ isSuperAdmin: user.isSuperAdmin })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1);
+
+    if (u?.isSuperAdmin) {
+      return {
+        isSuperAdmin: true,
+        isDealer: false,
+        isOps: true,
+        roleKeys: [ROLE_KEY_DEALER, ROLE_KEY_OPS],
+        roles: [],
+      };
+    }
+
+    const roles = await this.getUserRoles(userId);
+    const roleKeys = roles
+      .map((r) => r.key)
+      .filter((k): k is string => !!k && k.length > 0);
+    return {
+      isSuperAdmin: false,
+      isDealer: roleKeys.includes(ROLE_KEY_DEALER),
+      isOps: roleKeys.includes(ROLE_KEY_OPS),
+      roleKeys,
+      roles,
+    };
+  }
+
   async assertNotSuperAdminTarget(userId: string): Promise<void> {
     if (await this.isSuperAdmin(userId)) {
       throw new Error('SUPER_ADMIN_PROTECTED');

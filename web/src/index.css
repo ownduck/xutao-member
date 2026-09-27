@@ -35,3 +35,16 @@ input,
 textarea {
   font: inherit;
 }
+
+/*
+ * Ant Design 6 nests the indicator in `.ant-spin-section` and centers it at
+ * 50% of the full table height — long lists push the spinner out of view.
+ * Pin nested spinners (Table / Card) to the viewport center.
+ */
+.ant-spin-spinning:not(.ant-spin-fullscreen) > .ant-spin-section {
+  position: fixed !important;
+  top: 50vh !important;
+  left: 50vw !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 1100;
+}

@@ -26,11 +26,15 @@ const verifyLabel: Record<number, { text: string; color: string }> = {
   2: { text: '已拒绝', color: 'red' },
 }
 
+const PAGE_SIZE = 20
+
 export function RechargePage() {
-  const { can, user } = useAuth()
+  const { can, user, isSuperAdmin } = useAuth()
   const canWrite = can('recharge', 'rw')
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<FinanceRecharge[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [userId, setUserId] = useState<string>()
   const [isVerify, setIsVerify] = useState<string>()
   const [defaultCurrency, setDefaultCurrency] = useState(WALLET_CURRENCY)
@@ -50,16 +54,23 @@ export function RechargePage() {
   const [verifyForm] = Form.useForm<{ verify: boolean; verifyRemark?: string }>()
 
   const load = useCallback(async () => {
+    setRows([])
     setLoading(true)
     try {
-      const list = await api.listRecharges({ userId, isVerify })
-      setRows(Array.isArray(list) ? list : [])
+      const res = await api.listRecharges({
+        userId,
+        isVerify,
+        page,
+        pageSize: PAGE_SIZE,
+      })
+      setRows(Array.isArray(res.items) ? res.items : [])
+      setTotal(res.total ?? 0)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载充值单失败')
     } finally {
       setLoading(false)
     }
-  }, [userId, isVerify])
+  }, [userId, isVerify, page])
 
   useEffect(() => {
     void load()
@@ -122,7 +133,7 @@ export function RechargePage() {
         canWrite && r.isVerify === 0 ? (
           <Button
             type="link"
-            disabled={r.createAdminId === user?.id}
+            disabled={!isSuperAdmin && r.createAdminId === user?.id}
             onClick={() => {
               setCurrent(r)
               verifyForm.setFieldsValue({ verify: true, verifyRemark: undefined })
@@ -156,13 +167,22 @@ export function RechargePage() {
       }
     >
       <Space style={{ marginBottom: 16 }} wrap>
-        <DealerSelect value={userId} onChange={setUserId} />
+        <DealerSelect
+          value={userId}
+          onChange={(v) => {
+            setUserId(v)
+            setPage(1)
+          }}
+        />
         <Select
           allowClear
           placeholder="审核状态"
           style={{ width: 140 }}
           value={isVerify}
-          onChange={setIsVerify}
+          onChange={(v) => {
+            setIsVerify(v)
+            setPage(1)
+          }}
           options={[
             { value: '0', label: '待审核' },
             { value: '1', label: '已通过' },
@@ -179,7 +199,13 @@ export function RechargePage() {
         columns={columns}
         dataSource={rows}
         scroll={{ x: 1300 }}
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          current: page,
+          pageSize: PAGE_SIZE,
+          total,
+          showSizeChanger: false,
+          onChange: (p) => setPage(p),
+        }}
       />
 
       <Modal

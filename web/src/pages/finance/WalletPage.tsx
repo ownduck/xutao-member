@@ -16,6 +16,7 @@ export function WalletPage() {
   const [userId, setUserId] = useState<string>()
 
   const load = useCallback(async () => {
+    setRows([])
     setLoading(true)
     try {
       const list = await api.listWallets(userId)

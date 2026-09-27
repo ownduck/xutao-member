@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react'
@@ -29,8 +30,30 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+function clearAuthState(
+  setUser: (v: MeUser | null) => void,
+  setPermissions: (v: string[]) => void,
+  setRoleKeys: (v: string[]) => void,
+  setIsSuperAdmin: (v: boolean) => void,
+  setIsDealerFlag: (v: boolean) => void,
+  setIsOpsFlag: (v: boolean) => void,
+) {
+  setUser(null)
+  setPermissions([])
+  setRoleKeys([])
+  setIsSuperAdmin(false)
+  setIsDealerFlag(false)
+  setIsOpsFlag(false)
+  clearPermissions()
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
-  const { data: session, isPending } = useSession()
+  const { data: session, isPending, isRefetching } = useSession()
+  const sessionUser = session?.user
+  const sessionUserId = sessionUser?.id
+  const sessionUserRef = useRef(sessionUser)
+  sessionUserRef.current = sessionUser
+
   const [user, setUser] = useState<MeUser | null>(null)
   const [permissions, setPermissions] = useState<string[]>([])
   const [roleKeys, setRoleKeys] = useState<string[]>([])
@@ -38,18 +61,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [isDealerFlag, setIsDealerFlag] = useState(false)
   const [isOpsFlag, setIsOpsFlag] = useState(false)
   const [meLoading, setMeLoading] = useState(false)
+  const [bootstrapped, setBootstrapped] = useState(false)
 
-  const refresh = useCallback(async () => {
-    if (!session?.user) {
-      setUser(null)
-      setPermissions([])
-      setRoleKeys([])
-      setIsSuperAdmin(false)
-      setIsDealerFlag(false)
-      setIsOpsFlag(false)
-      clearPermissions()
-      return
-    }
+  const loadMe = useCallback(async () => {
+    const current = sessionUserRef.current
+    if (!current?.id) return
 
     setMeLoading(true)
     try {
@@ -63,14 +79,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       loadPermissions(me.permissions ?? [], Boolean(me.isSuperAdmin))
     } catch {
       const fallback: MeUser = {
-        id: session.user.id,
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
+        id: current.id,
+        name: current.name,
+        email: current.email,
+        image: current.image,
         isSuperAdmin: Boolean(
-          (session.user as { isSuperAdmin?: boolean }).isSuperAdmin,
+          (current as { isSuperAdmin?: boolean }).isSuperAdmin,
         ),
-        realname: (session.user as { realname?: string | null }).realname,
+        realname: (current as { realname?: string | null }).realname,
       }
       setUser(fallback)
       const sa = Boolean(fallback.isSuperAdmin)
@@ -82,12 +98,45 @@ export function AuthProvider({ children }: PropsWithChildren) {
       loadPermissions([], sa)
     } finally {
       setMeLoading(false)
+      setBootstrapped(true)
     }
-  }, [session])
+  }, [])
+
+  const refresh = useCallback(async () => {
+    if (!sessionUserRef.current?.id) {
+      clearAuthState(
+        setUser,
+        setPermissions,
+        setRoleKeys,
+        setIsSuperAdmin,
+        setIsDealerFlag,
+        setIsOpsFlag,
+      )
+      setBootstrapped(true)
+      return
+    }
+    await loadMe()
+  }, [loadMe])
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    // Session still resolving / background refetch — keep last known auth user.
+    if (isPending || isRefetching) return
+
+    if (!sessionUserId) {
+      clearAuthState(
+        setUser,
+        setPermissions,
+        setRoleKeys,
+        setIsSuperAdmin,
+        setIsDealerFlag,
+        setIsOpsFlag,
+      )
+      setBootstrapped(true)
+      return
+    }
+
+    void loadMe()
+  }, [sessionUserId, isPending, isRefetching, loadMe])
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -95,15 +144,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       permissions,
       roleKeys,
       isSuperAdmin,
-      loading: isPending || meLoading,
+      // Block only the first cold start; never flip loading on tab focus refetch.
+      loading: !bootstrapped && (isPending || meLoading),
       refresh,
       can: (code, mode = 'ro') => {
         if (isSuperAdmin) return true
         return readCan(code, mode)
       },
-      isDealer: () => isDealerFlag || roleKeys.includes('dealer'),
-      isOps: () =>
-        isOpsFlag || isSuperAdmin || roleKeys.includes('ops'),
+      isDealer: () => isDealerFlag,
+      isOps: () => isOpsFlag || isSuperAdmin,
     }),
     [
       user,
@@ -114,6 +163,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isOpsFlag,
       isPending,
       meLoading,
+      bootstrapped,
       refresh,
     ],
   )

@@ -7,28 +7,39 @@ import { api, type FinanceTradeLog } from '../../lib/api'
 import { formatMoney, WALLET_CURRENCY } from '../../lib/currency'
 import { useAuth } from '../../lib/auth-context'
 
+const PAGE_SIZE = 20
+
 export function TradeLogPage() {
   const { can } = useAuth()
   const canFilterDealer = can('recharge', 'ro')
   const [searchParams] = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<FinanceTradeLog[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [userId, setUserId] = useState<string | undefined>(
     searchParams.get('userId') || undefined,
   )
   const [direction, setDirection] = useState<string>()
 
   const load = useCallback(async () => {
+    setRows([])
     setLoading(true)
     try {
-      const list = await api.listTradeLogs({ userId, direction })
-      setRows(Array.isArray(list) ? list : [])
+      const res = await api.listTradeLogs({
+        userId,
+        direction,
+        page,
+        pageSize: PAGE_SIZE,
+      })
+      setRows(Array.isArray(res.items) ? res.items : [])
+      setTotal(res.total ?? 0)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载流水失败')
     } finally {
       setLoading(false)
     }
-  }, [userId, direction])
+  }, [userId, direction, page])
 
   useEffect(() => {
     void load()
@@ -78,14 +89,23 @@ export function TradeLogPage() {
     <Card title="账户变动">
       <Space style={{ marginBottom: 16 }} wrap>
         {canFilterDealer ? (
-          <DealerSelect value={userId} onChange={setUserId} />
+          <DealerSelect
+            value={userId}
+            onChange={(v) => {
+              setUserId(v)
+              setPage(1)
+            }}
+          />
         ) : null}
         <Select
           allowClear
           placeholder="方向"
           style={{ width: 120 }}
           value={direction}
-          onChange={setDirection}
+          onChange={(v) => {
+            setDirection(v)
+            setPage(1)
+          }}
           options={[
             { value: 'in', label: '收入' },
             { value: 'out', label: '支出' },
@@ -101,7 +121,13 @@ export function TradeLogPage() {
         columns={columns}
         dataSource={rows}
         scroll={{ x: 1200 }}
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          current: page,
+          pageSize: PAGE_SIZE,
+          total,
+          showSizeChanger: false,
+          onChange: (p) => setPage(p),
+        }}
       />
     </Card>
   )

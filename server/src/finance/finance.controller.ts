@@ -51,12 +51,16 @@ export class FinanceController {
     @Query('direction') direction?: string,
     @Query('createTimeStart') createTimeStart?: string,
     @Query('createTimeEnd') createTimeEnd?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
     return this.financeService.listTradeLogs(session.user.id, {
       userId,
       direction,
       createTimeStart,
       createTimeEnd,
+      page,
+      pageSize,
     });
   }
 
@@ -66,10 +70,14 @@ export class FinanceController {
     @Session() session: UserSession<typeof auth>,
     @Query('userId') userId?: string,
     @Query('isVerify') isVerify?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
     return this.financeService.listRecharges(session.user.id, {
       userId,
       isVerify,
+      page,
+      pageSize,
     });
   }
 
@@ -103,8 +111,14 @@ export class FinanceController {
   deductionList(
     @Session() session: UserSession<typeof auth>,
     @Query('userId') userId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.financeService.listDeductions(session.user.id, { userId });
+    return this.financeService.listDeductions(session.user.id, {
+      userId,
+      page,
+      pageSize,
+    });
   }
 
   @Post('deduction')

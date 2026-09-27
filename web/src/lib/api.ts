@@ -10,6 +10,13 @@ export class ApiError extends Error {
   }
 }
 
+export type PageResult<T> = {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown
 }
@@ -162,30 +169,45 @@ export const api = {
     request<FinanceWallet[]>(
       `/api/finance/wallet/list${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`,
     ),
-  listTradeLogs: (query: {
-    userId?: string
-    direction?: string
-    createTimeStart?: string
-    createTimeEnd?: string
-  } = {}) => {
+  listTradeLogs: (
+    query: {
+      userId?: string
+      direction?: string
+      createTimeStart?: string
+      createTimeEnd?: string
+      page?: number
+      pageSize?: number
+    } = {},
+  ) => {
     const qs = new URLSearchParams()
     if (query.userId) qs.set('userId', query.userId)
     if (query.direction) qs.set('direction', query.direction)
     if (query.createTimeStart) qs.set('createTimeStart', query.createTimeStart)
     if (query.createTimeEnd) qs.set('createTimeEnd', query.createTimeEnd)
+    if (query.page) qs.set('page', String(query.page))
+    if (query.pageSize) qs.set('pageSize', String(query.pageSize))
     const s = qs.toString()
-    return request<FinanceTradeLog[]>(
+    return request<PageResult<FinanceTradeLog>>(
       `/api/finance/trade/log${s ? `?${s}` : ''}`,
     )
   },
-  listRecharges: (query: { userId?: string; isVerify?: string } = {}) => {
+  listRecharges: (
+    query: {
+      userId?: string
+      isVerify?: string
+      page?: number
+      pageSize?: number
+    } = {},
+  ) => {
     const qs = new URLSearchParams()
     if (query.userId) qs.set('userId', query.userId)
     if (query.isVerify !== undefined && query.isVerify !== '') {
       qs.set('isVerify', query.isVerify)
     }
+    if (query.page) qs.set('page', String(query.page))
+    if (query.pageSize) qs.set('pageSize', String(query.pageSize))
     const s = qs.toString()
-    return request<FinanceRecharge[]>(
+    return request<PageResult<FinanceRecharge>>(
       `/api/finance/recharge/list${s ? `?${s}` : ''}`,
     )
   },
@@ -208,10 +230,20 @@ export const api = {
       method: 'PUT',
       body,
     }),
-  listDeductions: (userId?: string) =>
-    request<FinanceDeduction[]>(
-      `/api/finance/deduction/list${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`,
-    ),
+  listDeductions: (query: {
+    userId?: string
+    page?: number
+    pageSize?: number
+  } = {}) => {
+    const qs = new URLSearchParams()
+    if (query.userId) qs.set('userId', query.userId)
+    if (query.page) qs.set('page', String(query.page))
+    if (query.pageSize) qs.set('pageSize', String(query.pageSize))
+    const s = qs.toString()
+    return request<PageResult<FinanceDeduction>>(
+      `/api/finance/deduction/list${s ? `?${s}` : ''}`,
+    )
+  },
   createDeduction: (body: {
     userId: string
     amount: number
@@ -255,22 +287,53 @@ export const api = {
     }>('/api/site/exchange-rates/sync', { method: 'POST' }),
 
   // goods
-  listReserveOrders: (status?: string) => {
-    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
-    return request<GoodsOrder[]>(`/api/goods/orders/reserve${qs}`)
+  listReserveOrders: (query: {
+    status?: string
+    page?: number
+    pageSize?: number
+  } = {}) => {
+    const qs = new URLSearchParams()
+    if (query.status) qs.set('status', query.status)
+    if (query.page) qs.set('page', String(query.page))
+    if (query.pageSize) qs.set('pageSize', String(query.pageSize))
+    const s = qs.toString()
+    return request<PageResult<GoodsOrder>>(
+      `/api/goods/orders/reserve${s ? `?${s}` : ''}`,
+    )
   },
-  listFulfillOrders: (query: { dealerUserId?: string; status?: string } = {}) => {
+  listFulfillOrders: (
+    query: {
+      dealerUserId?: string
+      status?: string
+      page?: number
+      pageSize?: number
+    } = {},
+  ) => {
     const qs = new URLSearchParams()
     if (query.dealerUserId) qs.set('dealerUserId', query.dealerUserId)
     if (query.status) qs.set('status', query.status)
+    if (query.page) qs.set('page', String(query.page))
+    if (query.pageSize) qs.set('pageSize', String(query.pageSize))
     const s = qs.toString()
-    return request<GoodsOrder[]>(`/api/goods/orders/fulfill${s ? `?${s}` : ''}`)
+    return request<PageResult<GoodsOrder>>(
+      `/api/goods/orders/fulfill${s ? `?${s}` : ''}`,
+    )
   },
-  listHistoryOrders: (dealerUserId?: string) => {
-    const qs = dealerUserId
-      ? `?dealerUserId=${encodeURIComponent(dealerUserId)}`
-      : ''
-    return request<GoodsOrder[]>(`/api/goods/orders/history${qs}`)
+  listHistoryOrders: (
+    query: {
+      dealerUserId?: string
+      page?: number
+      pageSize?: number
+    } = {},
+  ) => {
+    const qs = new URLSearchParams()
+    if (query.dealerUserId) qs.set('dealerUserId', query.dealerUserId)
+    if (query.page) qs.set('page', String(query.page))
+    if (query.pageSize) qs.set('pageSize', String(query.pageSize))
+    const s = qs.toString()
+    return request<PageResult<GoodsOrder>>(
+      `/api/goods/orders/history${s ? `?${s}` : ''}`,
+    )
   },
   getGoodsOrder: (id: number) =>
     request<GoodsOrder>(`/api/goods/orders/${id}`),

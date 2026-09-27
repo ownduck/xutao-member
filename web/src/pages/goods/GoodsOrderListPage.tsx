@@ -9,10 +9,14 @@ import { useAuth } from '../../lib/auth-context'
 
 type Mode = 'reserve' | 'fulfill' | 'history'
 
+const PAGE_SIZE = 20
+
 export function GoodsOrderListPage({ mode }: { mode: Mode }) {
   const { can, isOps } = useAuth()
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<GoodsOrder[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [status, setStatus] = useState<string>()
   const [dealerUserId, setDealerUserId] = useState<string>()
 
@@ -24,27 +28,32 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
         : '历史订单'
 
   const load = useCallback(async () => {
+    setRows([])
     setLoading(true)
     try {
-      let list: GoodsOrder[] = []
-      if (mode === 'reserve') {
-        list = await api.listReserveOrders(status)
-      } else if (mode === 'fulfill') {
-        list = await api.listFulfillOrders({ dealerUserId, status })
-      } else {
-        list = await api.listHistoryOrders(dealerUserId)
-      }
-      setRows(Array.isArray(list) ? list : [])
+      const query = { page, pageSize: PAGE_SIZE }
+      const res =
+        mode === 'reserve'
+          ? await api.listReserveOrders({ status, ...query })
+          : mode === 'fulfill'
+            ? await api.listFulfillOrders({ dealerUserId, status, ...query })
+            : await api.listHistoryOrders({ dealerUserId, ...query })
+      setRows(Array.isArray(res.items) ? res.items : [])
+      setTotal(res.total ?? 0)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载失败')
     } finally {
       setLoading(false)
     }
-  }, [mode, status, dealerUserId])
+  }, [mode, status, dealerUserId, page])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    setPage(1)
+  }, [mode])
 
   const detailBase =
     mode === 'fulfill'
@@ -138,7 +147,13 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
     <Card title={title}>
       <Space style={{ marginBottom: 16 }} wrap>
         {showDealerFilter ? (
-          <DealerSelect value={dealerUserId} onChange={setDealerUserId} />
+          <DealerSelect
+            value={dealerUserId}
+            onChange={(v) => {
+              setDealerUserId(v)
+              setPage(1)
+            }}
+          />
         ) : null}
         {statusOptions.length ? (
           <Select
@@ -146,7 +161,10 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
             placeholder="状态"
             style={{ width: 140 }}
             value={status}
-            onChange={setStatus}
+            onChange={(v) => {
+              setStatus(v)
+              setPage(1)
+            }}
             options={statusOptions}
           />
         ) : null}
@@ -159,7 +177,13 @@ export function GoodsOrderListPage({ mode }: { mode: Mode }) {
         loading={loading}
         columns={columns}
         dataSource={rows}
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          current: page,
+          pageSize: PAGE_SIZE,
+          total,
+          showSizeChanger: false,
+          onChange: (p) => setPage(p),
+        }}
       />
     </Card>
   )

@@ -64,6 +64,7 @@ export function UsersPage() {
   const [roleIds, setRoleIds] = useState<number[]>([])
 
   const load = useCallback(async () => {
+    setUsers([])
     setLoading(true)
     try {
       const [userList, roleList] = await Promise.all([

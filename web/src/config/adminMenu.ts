@@ -36,7 +36,7 @@ export const adminMenus: AdminMenuItem[] = [
   },
   {
     key: 'goods',
-    label: '商品管理',
+    label: '订单管理',
     permission: 'goods',
     icon: createElement(ShoppingOutlined),
     children: [

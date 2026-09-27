@@ -47,10 +47,14 @@ export class GoodsController {
   listReserve(
     @Session() session: UserSession<typeof auth>,
     @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
     return this.goodsService.listOrders(session.user.id, {
       scope: 'reserve',
       status,
+      page,
+      pageSize,
     });
   }
 
@@ -60,11 +64,15 @@ export class GoodsController {
     @Session() session: UserSession<typeof auth>,
     @Query('dealerUserId') dealerUserId?: string,
     @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
     return this.goodsService.listOrders(session.user.id, {
       scope: 'fulfill',
       dealerUserId,
       status,
+      page,
+      pageSize,
     });
   }
 
@@ -73,10 +81,14 @@ export class GoodsController {
   listHistory(
     @Session() session: UserSession<typeof auth>,
     @Query('dealerUserId') dealerUserId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
     return this.goodsService.listOrders(session.user.id, {
       scope: 'history',
       dealerUserId,
+      page,
+      pageSize,
     });
   }
 

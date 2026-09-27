@@ -15,22 +15,19 @@ export class MeController {
 
   @Get()
   async me(@Session() session: UserSession<typeof auth>) {
-    const permissions = await this.permissionService.getEffectivePermissions(
-      session.user.id,
-    );
-    const isSuperAdmin = await this.permissionService.isSuperAdmin(
-      session.user.id,
-    );
-    const roles = await this.permissionService.getUserRoles(session.user.id);
-    const roleKeys = await this.permissionService.getRoleKeys(session.user.id);
+    const userId = session.user.id;
+    const [permissions, flags] = await Promise.all([
+      this.permissionService.getEffectivePermissions(userId),
+      this.permissionService.getActorFlags(userId),
+    ]);
     return {
       user: session.user,
       permissions,
-      isSuperAdmin,
-      roles,
-      roleKeys,
-      isDealer: await this.permissionService.isDealerUser(session.user.id),
-      isOps: await this.permissionService.isOpsUser(session.user.id),
+      isSuperAdmin: flags.isSuperAdmin,
+      roles: flags.roles,
+      roleKeys: flags.roleKeys,
+      isDealer: flags.isDealer,
+      isOps: flags.isOps,
     };
   }
 

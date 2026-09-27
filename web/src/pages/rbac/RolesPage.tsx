@@ -90,6 +90,7 @@ export function RolesPage() {
   const treeData = useMemo(() => toTreeData(permTree), [permTree])
 
   const load = useCallback(async () => {
+    setRoles([])
     setLoading(true)
     try {
       const [roleList, permList] = await Promise.all([

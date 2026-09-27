@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import {
   authRole,
@@ -18,6 +18,7 @@ import {
 import { PermissionService } from '../rbac/permission.service.js';
 import { ROLE_KEY_DEALER } from '../rbac/role-key.js';
 import { money, genNo } from '../common/format.js';
+import { pageResult, parsePageQuery, type PageQuery } from '../common/pagination.js';
 import { WALLET_CURRENCY } from '../site/exchange-rate-config.js';
 import { SiteService } from '../site/site.service.js';
 
@@ -184,8 +185,9 @@ export class FinanceService {
       direction?: string;
       createTimeStart?: string;
       createTimeEnd?: string;
-    },
+    } & PageQuery,
   ) {
+    const { page, pageSize, offset } = parsePageQuery(query);
     const scope = await this.resolveScopeUserId(actorId, query.userId);
     const conditions = [];
     if (scope) conditions.push(eq(financeTradeLog.userId, scope));
@@ -202,22 +204,33 @@ export class FinanceService {
         lte(financeTradeLog.createTime, new Date(query.createTimeEnd)),
       );
     }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const rows =
-      conditions.length > 0
-        ? await db
-            .select()
-            .from(financeTradeLog)
-            .where(and(...conditions))
-            .orderBy(desc(financeTradeLog.createTime))
-        : await db
-            .select()
-            .from(financeTradeLog)
-            .orderBy(desc(financeTradeLog.createTime));
+    const [totalRow] = await db
+      .select({ value: count() })
+      .from(financeTradeLog)
+      .where(where);
+    const total = Number(totalRow?.value ?? 0);
 
-    const enriched = [];
-    for (const row of rows) {
-      const [u] = await db
+    const rows = await db
+      .select()
+      .from(financeTradeLog)
+      .where(where)
+      .orderBy(desc(financeTradeLog.createTime))
+      .limit(pageSize)
+      .offset(offset);
+
+    if (rows.length === 0) {
+      return pageResult([], total, page, pageSize);
+    }
+
+    const userIds = [...new Set(rows.map((r) => r.userId))];
+    const userMap = new Map<
+      string,
+      { id: string; name: string; email: string; realname: string | null }
+    >();
+    if (userIds.length > 0) {
+      const users = await db
         .select({
           id: user.id,
           name: user.name,
@@ -225,41 +238,49 @@ export class FinanceService {
           realname: user.realname,
         })
         .from(user)
-        .where(eq(user.id, row.userId))
-        .limit(1);
-      enriched.push({
+        .where(inArray(user.id, userIds));
+      for (const u of users) userMap.set(u.id, u);
+    }
+
+    const items = rows.map((row) => {
+      const u = userMap.get(row.userId);
+      return {
         ...row,
         userName: u?.realname || u?.name || u?.email || row.userId,
-      });
-    }
-    return enriched;
+      };
+    });
+    return pageResult(items, total, page, pageSize);
   }
 
   async listRecharges(
     actorId: string,
-    query: { userId?: string; isVerify?: string },
+    query: { userId?: string; isVerify?: string } & PageQuery,
   ) {
     if (await this.isDealerUser(actorId)) {
       throw new ForbiddenException('无权查看充值审核');
     }
 
+    const { page, pageSize, offset } = parsePageQuery(query);
     const conditions = [];
     if (query.userId) conditions.push(eq(financeRecharge.userId, query.userId));
     if (query.isVerify !== undefined && query.isVerify !== '') {
       conditions.push(eq(financeRecharge.isVerify, Number(query.isVerify)));
     }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const rows =
-      conditions.length > 0
-        ? await db
-            .select()
-            .from(financeRecharge)
-            .where(and(...conditions))
-            .orderBy(desc(financeRecharge.createTime))
-        : await db
-            .select()
-            .from(financeRecharge)
-            .orderBy(desc(financeRecharge.createTime));
+    const [totalRow] = await db
+      .select({ value: count() })
+      .from(financeRecharge)
+      .where(where);
+    const total = Number(totalRow?.value ?? 0);
+
+    const rows = await db
+      .select()
+      .from(financeRecharge)
+      .where(where)
+      .orderBy(desc(financeRecharge.createTime))
+      .limit(pageSize)
+      .offset(offset);
 
     const nameIds = [
       ...new Set(
@@ -285,7 +306,7 @@ export class FinanceService {
       }
     }
 
-    return rows.map((row) => ({
+    const items = rows.map((row) => ({
       ...row,
       createAdminName:
         nameMap.get(row.createAdminId) || row.createAdminId,
@@ -293,6 +314,7 @@ export class FinanceService {
         ? nameMap.get(row.verifyAdminId) || null
         : null,
     }));
+    return pageResult(items, total, page, pageSize);
   }
 
   async createRecharge(
@@ -373,7 +395,10 @@ export class FinanceService {
     if (row.isVerify !== VERIFY_PENDING) {
       throw new BadRequestException('该单已审核');
     }
-    if (row.createAdminId === actorId) {
+    if (
+      row.createAdminId === actorId &&
+      !(await this.permissionService.isSuperAdmin(actorId))
+    ) {
       throw new ForbiddenException('不能审核自己提交的充值单');
     }
 
@@ -468,25 +493,33 @@ export class FinanceService {
     return updated;
   }
 
-  async listDeductions(actorId: string, query: { userId?: string }) {
+  async listDeductions(
+    actorId: string,
+    query: { userId?: string } & PageQuery,
+  ) {
     if (await this.isDealerUser(actorId)) {
       throw new ForbiddenException('无权查看扣费审核');
     }
+    const { page, pageSize, offset } = parsePageQuery(query);
     const conditions = [];
     if (query.userId) {
       conditions.push(eq(financeDeduction.userId, query.userId));
     }
-    const rows =
-      conditions.length > 0
-        ? await db
-            .select()
-            .from(financeDeduction)
-            .where(and(...conditions))
-            .orderBy(desc(financeDeduction.createTime))
-        : await db
-            .select()
-            .from(financeDeduction)
-            .orderBy(desc(financeDeduction.createTime));
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalRow] = await db
+      .select({ value: count() })
+      .from(financeDeduction)
+      .where(where);
+    const total = Number(totalRow?.value ?? 0);
+
+    const rows = await db
+      .select()
+      .from(financeDeduction)
+      .where(where)
+      .orderBy(desc(financeDeduction.createTime))
+      .limit(pageSize)
+      .offset(offset);
 
     const nameIds = [
       ...new Set(
@@ -512,7 +545,7 @@ export class FinanceService {
       }
     }
 
-    return rows.map((row) => ({
+    const items = rows.map((row) => ({
       ...row,
       createAdminName: nameMap.get(row.createAdminId) || null,
       verifyAdminName: row.verifyAdminId
@@ -522,6 +555,7 @@ export class FinanceService {
         ? { id: row.orderId, orderNumber: row.orderNumber }
         : null,
     }));
+    return pageResult(items, total, page, pageSize);
   }
 
   async createDeduction(
@@ -595,7 +629,10 @@ export class FinanceService {
     if (row.isVerify !== VERIFY_PENDING) {
       throw new BadRequestException('该单已审核');
     }
-    if (row.createAdminId === actorId) {
+    if (
+      row.createAdminId === actorId &&
+      !(await this.permissionService.isSuperAdmin(actorId))
+    ) {
       throw new ForbiddenException('不能审核自己提交的扣费单');
     }
 

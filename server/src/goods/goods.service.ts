@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, sum } from 'drizzle-orm';
 import * as XLSX from 'xlsx';
 import { db } from '../db/index.js';
 import {
@@ -29,6 +29,7 @@ import {
 import { convertViaBase } from '../site/currency-exchange.js';
 import { WALLET_CURRENCY } from '../site/exchange-rate-config.js';
 import { errorMessage, genNo, money } from '../common/format.js';
+import { pageResult, parsePageQuery, type PageQuery } from '../common/pagination.js';
 
 function computePriceStatus(
   items: Array<{ unitPrice?: string | null }>,
@@ -150,11 +151,9 @@ export class GoodsService {
     actorId: string,
     order: typeof goodsOrder.$inferSelect,
   ) {
-    const isDealer = await this.permissionService.isDealerUser(actorId);
-    const isOps = await this.permissionService.isOpsUser(actorId);
-    const isSuper = await this.permissionService.isSuperAdmin(actorId);
-    if (isSuper || isOps) return;
-    if (isDealer && order.dealerUserId === actorId) return;
+    const flags = await this.permissionService.getActorFlags(actorId);
+    if (flags.isSuperAdmin || flags.isOps) return;
+    if (flags.isDealer && order.dealerUserId === actorId) return;
     throw new ForbiddenException('无权查看该订单');
   }
 
@@ -164,11 +163,11 @@ export class GoodsService {
       scope: 'reserve' | 'fulfill' | 'history';
       dealerUserId?: string;
       status?: string;
-    },
+    } & PageQuery,
   ) {
-    const isDealer = await this.permissionService.isDealerUser(actorId);
-    const isOps = await this.permissionService.isOpsUser(actorId);
-    const isSuper = await this.permissionService.isSuperAdmin(actorId);
+    const flags = await this.permissionService.getActorFlags(actorId);
+    const { isDealer, isOps, isSuperAdmin: isSuper } = flags;
+    const { page, pageSize, offset } = parsePageQuery(query);
 
     let allowed: OrderStatus[];
     if (query.scope === 'reserve') {
@@ -199,15 +198,30 @@ export class GoodsService {
       conditions.push(eq(goodsOrder.dealerUserId, query.dealerUserId));
     }
 
+    const where = and(...conditions);
+    const [totalRow] = await db
+      .select({ value: count() })
+      .from(goodsOrder)
+      .where(where);
+    const total = Number(totalRow?.value ?? 0);
+
     const rows = await db
       .select()
       .from(goodsOrder)
-      .where(and(...conditions))
-      .orderBy(desc(goodsOrder.createTime));
+      .where(where)
+      .orderBy(desc(goodsOrder.createTime))
+      .limit(pageSize)
+      .offset(offset);
 
-    const result = [];
-    for (const row of rows) {
-      const [dealer] = await db
+    if (rows.length === 0) {
+      return pageResult([], total, page, pageSize);
+    }
+
+    const orderIds = rows.map((r) => r.id);
+    const dealerIds = [...new Set(rows.map((r) => r.dealerUserId))];
+
+    const [dealers, aggregates] = await Promise.all([
+      db
         .select({
           id: user.id,
           name: user.name,
@@ -215,21 +229,42 @@ export class GoodsService {
           realname: user.realname,
         })
         .from(user)
-        .where(eq(user.id, row.dealerUserId))
-        .limit(1);
-      const items = await db
-        .select()
+        .where(inArray(user.id, dealerIds)),
+      db
+        .select({
+          orderId: goodsOrderItem.orderId,
+          itemCount: count(),
+          reserveQtyTotal: sum(goodsOrderItem.reserveQty),
+          fulfillQtyTotal: sum(goodsOrderItem.fulfillQty),
+        })
         .from(goodsOrderItem)
-        .where(eq(goodsOrderItem.orderId, row.id));
-      result.push({
+        .where(inArray(goodsOrderItem.orderId, orderIds))
+        .groupBy(goodsOrderItem.orderId),
+    ]);
+
+    const dealerMap = new Map(dealers.map((d) => [d.id, d]));
+    const aggMap = new Map(
+      aggregates.map((a) => [
+        a.orderId,
+        {
+          itemCount: Number(a.itemCount) || 0,
+          reserveQtyTotal: Number(a.reserveQtyTotal) || 0,
+          fulfillQtyTotal: Number(a.fulfillQtyTotal) || 0,
+        },
+      ]),
+    );
+
+    const items = rows.map((row) => {
+      const agg = aggMap.get(row.id);
+      return {
         ...row,
-        itemCount: items.length,
-        reserveQtyTotal: items.reduce((s, i) => s + i.reserveQty, 0),
-        fulfillQtyTotal: items.reduce((s, i) => s + i.fulfillQty, 0),
-        dealer: dealer ?? null,
-      });
-    }
-    return result;
+        itemCount: agg?.itemCount ?? 0,
+        reserveQtyTotal: agg?.reserveQtyTotal ?? 0,
+        fulfillQtyTotal: agg?.fulfillQtyTotal ?? 0,
+        dealer: dealerMap.get(row.dealerUserId) ?? null,
+      };
+    });
+    return pageResult(items, total, page, pageSize);
   }
 
   async getOrderDetail(actorId: string, orderId: number) {
@@ -241,34 +276,37 @@ export class GoodsService {
     if (!order) throw new NotFoundException('订单不存在');
     await this.assertCanView(actorId, order);
 
-    const items = await db
-      .select()
-      .from(goodsOrderItem)
-      .where(eq(goodsOrderItem.orderId, orderId))
-      .orderBy(asc(goodsOrderItem.sort));
-
-    const [dealer] = await db
-      .select({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        realname: user.realname,
-      })
-      .from(user)
-      .where(eq(user.id, order.dealerUserId))
-      .limit(1);
-
-    let deduction: typeof financeDeduction.$inferSelect | null = null;
-    if (order.deductionId) {
-      const [d] = await db
+    const [items, dealerRows, deductionRows] = await Promise.all([
+      db
         .select()
-        .from(financeDeduction)
-        .where(eq(financeDeduction.id, order.deductionId))
-        .limit(1);
-      deduction = d ?? null;
-    }
+        .from(goodsOrderItem)
+        .where(eq(goodsOrderItem.orderId, orderId))
+        .orderBy(asc(goodsOrderItem.sort)),
+      db
+        .select({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          realname: user.realname,
+        })
+        .from(user)
+        .where(eq(user.id, order.dealerUserId))
+        .limit(1),
+      order.deductionId
+        ? db
+            .select()
+            .from(financeDeduction)
+            .where(eq(financeDeduction.id, order.deductionId))
+            .limit(1)
+        : Promise.resolve([] as (typeof financeDeduction.$inferSelect)[]),
+    ]);
 
-    return { ...order, items, dealer: dealer ?? null, deduction };
+    return {
+      ...order,
+      items,
+      dealer: dealerRows[0] ?? null,
+      deduction: deductionRows[0] ?? null,
+    };
   }
 
   async updateOrder(
@@ -285,9 +323,11 @@ export class GoodsService {
     },
   ) {
     const detail = await this.getOrderDetail(actorId, orderId);
-    const isDealer = await this.permissionService.isDealerUser(actorId);
-    const isOps = await this.permissionService.isOpsUser(actorId);
-    const isSuper = await this.permissionService.isSuperAdmin(actorId);
+    const {
+      isDealer,
+      isOps,
+      isSuperAdmin: isSuper,
+    } = await this.permissionService.getActorFlags(actorId);
 
     if (detail.status === ORDER_STATUS.RESERVING) {
       if (!isDealer && !isSuper) {
@@ -412,8 +452,8 @@ export class GoodsService {
 
   async submitFulfill(actorId: string, orderId: number) {
     const detail = await this.getOrderDetail(actorId, orderId);
-    const isDealer = await this.permissionService.isDealerUser(actorId);
-    const isSuper = await this.permissionService.isSuperAdmin(actorId);
+    const { isDealer, isSuperAdmin: isSuper } =
+      await this.permissionService.getActorFlags(actorId);
     if (!isDealer && !isSuper) {
       throw new ForbiddenException('仅经销商可提交履约');
     }
@@ -449,8 +489,8 @@ export class GoodsService {
     if (order.status !== ORDER_STATUS.RESERVING) {
       throw new BadRequestException('仅预约中订单可同步价格');
     }
-    const isDealer = await this.permissionService.isDealerUser(actorId);
-    const isSuper = await this.permissionService.isSuperAdmin(actorId);
+    const { isDealer, isSuperAdmin: isSuper } =
+      await this.permissionService.getActorFlags(actorId);
     if (!isDealer && !isSuper) {
       throw new ForbiddenException('仅经销商可同步价格');
     }
@@ -655,8 +695,8 @@ export class GoodsService {
   }
 
   async submitComplete(actorId: string, orderId: number) {
-    const isOps = await this.permissionService.isOpsUser(actorId);
-    const isSuper = await this.permissionService.isSuperAdmin(actorId);
+    const { isOps, isSuperAdmin: isSuper } =
+      await this.permissionService.getActorFlags(actorId);
     if (!isOps && !isSuper) {
       throw new ForbiddenException('仅运营可提交完成');
     }

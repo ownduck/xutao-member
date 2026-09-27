@@ -26,11 +26,15 @@ const verifyLabel: Record<number, { text: string; color: string }> = {
   2: { text: '已拒绝', color: 'red' },
 }
 
+const PAGE_SIZE = 20
+
 export function DeductionPage() {
-  const { can, user } = useAuth()
+  const { can, user, isSuperAdmin } = useAuth()
   const canWrite = can('deduction', 'rw')
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<FinanceDeduction[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [userId, setUserId] = useState<string>()
   const [defaultCurrency, setDefaultCurrency] = useState(WALLET_CURRENCY)
 
@@ -50,16 +54,22 @@ export function DeductionPage() {
   const [verifyForm] = Form.useForm<{ verify: boolean; verifyRemark?: string }>()
 
   const load = useCallback(async () => {
+    setRows([])
     setLoading(true)
     try {
-      const list = await api.listDeductions(userId)
-      setRows(Array.isArray(list) ? list : [])
+      const res = await api.listDeductions({
+        userId,
+        page,
+        pageSize: PAGE_SIZE,
+      })
+      setRows(Array.isArray(res.items) ? res.items : [])
+      setTotal(res.total ?? 0)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载扣费单失败')
     } finally {
       setLoading(false)
     }
-  }, [userId])
+  }, [userId, page])
 
   useEffect(() => {
     void load()
@@ -96,7 +106,13 @@ export function DeductionPage() {
       dataIndex: 'orderNumber',
       render: (v, r) =>
         r.orderId ? (
-          <Link to={`/goods/history/${r.orderId}`}>{v || r.orderId}</Link>
+          <Link
+            to={`/goods/history/${r.orderId}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {v || r.orderId}
+          </Link>
         ) : (
           '—'
         ),
@@ -125,7 +141,7 @@ export function DeductionPage() {
         canWrite && r.isVerify === 0 ? (
           <Button
             type="link"
-            disabled={r.createAdminId === user?.id}
+            disabled={!isSuperAdmin && r.createAdminId === user?.id}
             onClick={() => {
               setCurrent(r)
               setOrderDetail(null)
@@ -166,7 +182,13 @@ export function DeductionPage() {
       }
     >
       <Space style={{ marginBottom: 16 }} wrap>
-        <DealerSelect value={userId} onChange={setUserId} />
+        <DealerSelect
+          value={userId}
+          onChange={(v) => {
+            setUserId(v)
+            setPage(1)
+          }}
+        />
         <Button type="primary" onClick={() => void load()}>
           查询
         </Button>
@@ -177,7 +199,13 @@ export function DeductionPage() {
         columns={columns}
         dataSource={rows}
         scroll={{ x: 1100 }}
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          current: page,
+          pageSize: PAGE_SIZE,
+          total,
+          showSizeChanger: false,
+          onChange: (p) => setPage(p),
+        }}
       />
 
       <Modal
@@ -276,7 +304,11 @@ export function DeductionPage() {
               <div style={{ marginTop: 12 }}>
                 <div>
                   关联订单：
-                  <Link to={`/goods/history/${current.orderId}`}>
+                  <Link
+                    to={`/goods/history/${current.orderId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     {current.orderNumber || current.orderId}
                   </Link>
                 </div>

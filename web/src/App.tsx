@@ -20,24 +20,26 @@ import { SiteConfigPage } from './pages/site/SiteConfigPage'
 function ProtectedLayout() {
   const location = useLocation()
   const { data: session, isPending } = useSession()
-  const { loading } = useAuth()
+  const { loading, user } = useAuth()
+  const hasSessionUser = Boolean(session?.user || user)
 
-  if (isPending || loading) {
-    return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Spin size="large" />
-      </div>
-    )
-  }
-
-  if (!session?.user) {
+  // Prefer keeping the shell mounted. Session focus-refetch must not tear down
+  // routes just because isPending flickered or get-session is slow after idle.
+  if (!hasSessionUser) {
+    if (isPending || loading) {
+      return (
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Spin size="large" />
+        </div>
+      )
+    }
     const redirect = encodeURIComponent(location.pathname + location.search)
     return <Navigate to={`/login?redirect=${redirect}`} replace />
   }

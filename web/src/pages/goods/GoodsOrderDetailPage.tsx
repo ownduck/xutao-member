@@ -188,43 +188,59 @@ export function GoodsOrderDetailPage({ mode }: { mode: Mode }) {
 
   async function handleSyncBatch(modeSync: 'all' | 'empty') {
     if (!order) return
+    const targets = (order.items ?? []).filter((i) => {
+      if (modeSync === 'all') return true
+      const d = drafts[i.id]
+      if (d) return d.unitPrice == null
+      return i.unitPrice == null || i.unitPrice === ''
+    })
+    if (!targets.length) {
+      message.info('没有需要同步的商品行')
+      return
+    }
+
     if (modeSync === 'all') setSyncingAll(true)
     else setSyncingEmpty(true)
+
+    let okCount = 0
+    const failMessages: string[] = []
     try {
-      const res = await api.syncGoodsPrices(order.id, modeSync)
-      let okCount = 0
-      for (const r of res.results) {
-        if (r.ok && r.unitPrice != null) {
-          okCount += 1
+      for (const item of targets) {
+        setSyncingItemId(item.id)
+        try {
+          const res = await api.syncGoodsItemPrice(order.id, item.id)
           setDrafts((prev) => {
-            const cur = prev[r.itemId]
+            const cur = prev[item.id]
             if (!cur) return prev
             return {
               ...prev,
-              [r.itemId]: {
+              [item.id]: {
                 ...cur,
-                unitPrice: r.unitPrice!,
+                unitPrice: res.unitPrice,
                 dirtyPrice: true,
               },
             }
           })
+          okCount += 1
+        } catch (err) {
+          failMessages.push(
+            err instanceof Error ? err.message : `商品行 ${item.id} 失败`,
+          )
         }
       }
-      const fail = res.results.filter((r) => !r.ok)
       if (okCount) {
         message.success(`已同步 ${okCount} 行价格（需点确定后保存）`)
       }
-      if (fail.length) {
+      if (failMessages.length) {
         message.warning(
-          `${fail.length} 行失败：${fail[0]?.error || '未知错误'}`,
+          `${failMessages.length} 行失败：${failMessages[0]}`,
         )
       }
-      if (!okCount && !fail.length) {
+      if (!okCount && !failMessages.length) {
         message.info('没有需要同步的商品行')
       }
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '批量同步失败')
     } finally {
+      setSyncingItemId(null)
       if (modeSync === 'all') setSyncingAll(false)
       else setSyncingEmpty(false)
     }
