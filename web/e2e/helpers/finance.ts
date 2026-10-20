@@ -40,7 +40,8 @@ async function waitForRemarkRow(page: Page, remark: string) {
     .locator('.ant-table-tbody tr')
     .filter({ hasText: remark })
     .first()
-  await expect(row).toBeVisible({ timeout: 45_000 })
+  // 该环境列表请求 20-40s，慢时可达 90-120s。
+  await expect(row).toBeVisible({ timeout: 120_000 })
   return row
 }
 
@@ -49,7 +50,7 @@ export async function createRecharge(
   amount: number,
   remark = 'pw-recharge',
 ) {
-  await page.goto('/finance/recharge')
+  await page.goto('/finance/recharge', { timeout: 120_000 })
   await waitForAppReady(page)
   await page.getByRole('button', { name: '新增充值' }).click()
   const modal = page.locator('.ant-modal').filter({ hasText: '新增充值' })
@@ -62,7 +63,7 @@ export async function createRecharge(
   )
   await modal.locator('textarea').first().fill(remark)
   await modal.getByRole('button', { name: /确\s*定/ }).click()
-  await expect(page.getByText(/已提交/)).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(/已提交/)).toBeVisible({ timeout: 60_000 })
   await waitForRemarkRow(page, remark)
 }
 
@@ -71,7 +72,7 @@ export async function createDeduction(
   amount: number,
   remark = 'pw-deduct',
 ) {
-  await page.goto('/finance/deduction')
+  await page.goto('/finance/deduction', { timeout: 120_000 })
   await waitForAppReady(page)
   await page.getByRole('button', { name: '新增扣费' }).click()
   const modal = page.locator('.ant-modal').filter({ hasText: '新增扣费' })
@@ -84,7 +85,7 @@ export async function createDeduction(
   )
   await modal.locator('textarea').first().fill(remark)
   await modal.getByRole('button', { name: /确\s*定/ }).click()
-  await expect(page.getByText(/已提交/)).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(/已提交/)).toBeVisible({ timeout: 60_000 })
   await waitForRemarkRow(page, remark)
 }
 
@@ -99,5 +100,5 @@ export async function auditRowByRemark(
   await expect(modal).toBeVisible()
   await modal.getByText(approve ? '通过' : '拒绝').click()
   await modal.getByRole('button', { name: /确\s*定/ }).click()
-  await expect(page.getByText('审核完成')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('审核完成')).toBeVisible({ timeout: 60_000 })
 }

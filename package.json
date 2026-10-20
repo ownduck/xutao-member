@@ -18,6 +18,7 @@
     "test:e2e:api": "npm run test:e2e -w server"
   },
   "devDependencies": {
-    "concurrently": "^9.2.4"
+    "concurrently": "^9.2.4",
+    "playwright": "1.64.1"
   }
 }

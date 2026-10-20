@@ -112,17 +112,15 @@ describe('rbac roles + permissions', () => {
 
     const getP = await api(`/api/rbac/roles/${roleId}/permissions`, admin);
     expectOk(getP);
-    const bound = getP.data as Array<{
-      permissionId: number;
-      rw?: string;
-    }>;
-    const ro = bound.filter((p) => p.rw === 'ro' || p.rw === '0');
-    // service stores rw as 'ro'
-    const hasRo = bound.some(
-      (p) => p.permissionId === leafB && (p.rw === 'ro' || p.rw === 'RO'),
-    );
-    expect(hasRo || bound.some((p) => p.permissionId === leafB)).toBe(true);
-    void ro;
+    const bound = getP.data as {
+      permissionIds: number[];
+      readOnlyPermissionIds: number[];
+    };
+    expect(bound.readOnlyPermissionIds).toContain(leafB);
+    if (leafA !== leafB) {
+      expect(bound.permissionIds).toContain(leafA);
+      expect(bound.readOnlyPermissionIds).not.toContain(leafA);
+    }
 
     const del = await api(`/api/rbac/roles/${roleId}`, admin, {
       method: 'DELETE',

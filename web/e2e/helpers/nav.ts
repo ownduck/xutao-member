@@ -3,16 +3,18 @@ import { expect } from '@playwright/test'
 
 /** Wait until ProtectedLayout Spin finishes and permission menus are painted. */
 export async function waitForAppReady(page: Page) {
+  // 后端在长跑/开发环境下偶发响应很慢（/api/me 可达数十秒），这里给足余量。
   await expect(page.locator('.ant-layout-sider')).toBeVisible({
-    timeout: 60_000,
+    timeout: 120_000,
   })
   await expect(page.locator('.ant-spin-spinning'))
-    .toHaveCount(0, { timeout: 30_000 })
+    .toHaveCount(0, { timeout: 120_000 })
     .catch(() => undefined)
   // After /api/me, every seeded role has at least one submenu (订单管理).
+  // /api/me 在慢环境下可达 90-120s，因此这里同样给足余量。
   await expect(
     page.locator('.ant-layout-sider .ant-menu-submenu').first(),
-  ).toBeVisible({ timeout: 45_000 })
+  ).toBeVisible({ timeout: 120_000 })
 }
 
 /** Expand collapsed Ant Design submenus so leaf links are in the DOM. */

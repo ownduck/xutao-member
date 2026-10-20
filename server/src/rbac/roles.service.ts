@@ -90,22 +90,22 @@ export class RolesService {
 
   async getPermissions(roleId: number) {
     await this.ensureExists(roleId);
-    return db
+    const rows = await db
       .select({
-        permissionId: authPermission.permissionId,
-        parentPermissionId: authPermission.parentPermissionId,
-        code: authPermission.code,
-        name: authPermission.name,
-        description: authPermission.description,
+        permissionId: authRolePermissions.permissionId,
         rw: authRolePermissions.rw,
       })
       .from(authRolePermissions)
-      .innerJoin(
-        authPermission,
-        eq(authPermission.permissionId, authRolePermissions.permissionId),
-      )
       .where(eq(authRolePermissions.roleId, roleId))
-      .orderBy(asc(authPermission.sort));
+      .orderBy(asc(authRolePermissions.permissionId));
+    return {
+      permissionIds: rows
+        .filter((row) => row.rw !== 'ro')
+        .map((row) => row.permissionId),
+      readOnlyPermissionIds: rows
+        .filter((row) => row.rw === 'ro')
+        .map((row) => row.permissionId),
+    };
   }
 
   async setPermissions(

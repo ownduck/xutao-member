@@ -166,6 +166,8 @@ export function RolesPage() {
       message.error(err instanceof Error ? err.message : '加载权限失败')
       setCheckedIds([])
       setModeMap({})
+      // 加载失败时关闭弹窗，避免误点“确定”提交空权限覆盖既有配置。
+      setPermOpen(false)
     } finally {
       setPermLoading(false)
     }
